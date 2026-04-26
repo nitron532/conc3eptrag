@@ -18,10 +18,16 @@ class PersistentChromaDBCollection:
         self.collection = client.get_or_create_collection(name = collectionName, embedding_function = self.embeddingFunction)
         self.startId = 0
 
+        #check if there is anything in the db. if so, set the start id to the highest id
+        results = self.collection.get()
+        if results["ids"]:
+            self.startId = results["ids"][-1]
+        
+
     def addToCollection(self,
                         documents: list[str],
                         metadata: dict[str:Any],
-                        ids: list[int]):
+                        ids: list[int]) -> None:
             try:
                 self.collection.add(
                     ids = ids,
@@ -33,7 +39,7 @@ class PersistentChromaDBCollection:
                 raise #some error. should be more descriptive in the future
     
     def parseAndPopulate(self,
-                             materialsPath: str):
+                             materialsPath: str) -> int:
         if self.startId != 0: return 0 #nothing done, collection was initialized already.
         try:
             for chunks, ids, metadata, latestId in parsing.walkParse(materialsPath, self.startId):
@@ -52,7 +58,9 @@ class PersistentChromaDBCollection:
             n_results=numResults 
         )
 
-    def getCollectionCount(self): return self.collection.count()
+    def getCollectionCount(self) -> int: return self.collection.count()
+
+    def getCollectionStartId(self) -> int: return self.startId
 
     def collectionGet(self, metadata:dict[str:Any]):
         return self.collection.get(
