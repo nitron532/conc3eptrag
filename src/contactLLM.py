@@ -17,6 +17,8 @@ status = cs16collection.parseAndPopulate(persistentPath)
 
 if status == 0: print(f"Found existing persistent chromadb collection at {persistentPath}")
 
+question = ""
+
 messages = [
     {"role": "system", "content": """You are a helpful assistant that classifies computer science questions into the highest required cognitive level of the Revised Bloom's Taxonomy.
 The questions come from an introductory CS1 C++ course. You will be given context from course materials that the students are familiar with. Use the context and the following guidelines to classify.
