@@ -1,12 +1,5 @@
 #include "reranker.h"
 
-#if !defined(SAFETENSORS_CPP_NO_IMPLEMENTATION)
-#define SAFETENSORS_CPP_IMPLEMENTATION
-#endif
-#include "safetensors.hh"
-
-#define USE_MMAP
-
 double cosineSimilarity(const float* a, const float* b, size_t size){
     float dot = 0, na = 0, nb = 0;
         for (int i = 0; i < size; i++) {
@@ -15,6 +8,62 @@ double cosineSimilarity(const float* a, const float* b, size_t size){
             nb  += b[i] * b[i];
         }
     return dot / (std::sqrt(na) * std::sqrt(nb) + 1e-8f);
+}
+
+void ReRanker::loadSafeTensors(const char* projectorPath){
+    // std::string projectorPath = "projector.safetensors";
+    std::string warn, err;
+
+    #if defined(USE_MMAP)
+        printf("USE mmap\n");
+        bool ret = safetensors::mmap_from_file(projectorPath, &this->st, &warn, &err);
+    #else
+        bool ret = safetensors::load_from_file(projectorPath, &st, &warn, &err);
+    #endif
+
+    if (warn.size()) {
+        std::cout << "WARN: " << warn << "\n";
+    }
+
+    if (!ret) {
+        throw std::runtime_error("Failed to load with projector weights with error: " + err);
+    }
+
+    if (!safetensors::validate_data_offsets(this->st, err)) {
+        throw std::runtime_error("Invalid data offsets: " + err);
+    }
+
+    const uint8_t* databuffer = nullptr;
+    this->databuffer = this->st.mmaped ? this->st.databuffer_addr : this->st.storage.data();
+}
+
+const std::pair<const float*, std::vector<size_t>> ReRanker::getTensor(const char* name) {
+        safetensors::tensor_t t;
+        st.tensors.at(name, &t);
+        const float* data = reinterpret_cast<const float*>(this->databuffer + t.data_offsets[0]);
+        return {data, t.shape};
+}
+
+const float* ReRanker::linearLayer(const float* in, const float* weight, const float* bias, size_t inDim, size_t outDim, bool relu){
+    float* output = new float[outDim];
+    for(size_t i = 0; i < outDim; i++){
+        float sum = bias ? bias[i] : 0.0f;
+        for(size_t j = 0; j < inDim; j++){
+            sum += weight[i * inDim + j] * in[j];
+        }
+        output[i] = relu ? std::max(0.0f, sum) : sum; //relu
+    }
+    return output;
+}
+
+const float* ReRanker::project(const float* embedding){ //1024 dimensional raw embedding
+    const std::pair<const float*, std::vector<size_t>> firstLayer = getTensor("projector.0.weight");
+    const std::pair<const float*, std::vector<size_t>> secondLayer = getTensor("projector.2.weight");
+    
+    const float* firstActivation = linearLayer(embedding, firstLayer.first, nullptr, firstLayer.second[1], firstLayer.second[0], true);
+    const float* secondActivation = linearLayer(firstActivation, secondLayer.first, nullptr, secondLayer.second[0], secondLayer.second[1], false);
+    delete [] firstActivation;
+    return secondActivation;
 }
 
 ReRanker::ReRanker(size_t gpuLayers, const char* rerankingModelPath){
@@ -40,7 +89,7 @@ ReRanker::ReRanker(size_t gpuLayers, const char* rerankingModelPath){
         this->context = llama_init_from_model(rerankingModel, contextParams);
         this->vocab = llama_model_get_vocab(rerankingModel);
 
-    }
+}
 
 ReRanker::~ReRanker(){
         llama_free(this->context);
@@ -79,7 +128,7 @@ void ReRanker::modelReRank(){
     size_t numTokens = llama_tokenize(this->vocab, fullPrompt.c_str(), fullPrompt.size(), tokens.data(), tokens.size(), true, true);
     tokens.resize(numTokens);
 
-    size_t* docEmbeddingPositions = new size_t(this->docs->size());
+    size_t* docEmbeddingPositions = new size_t[this->docs->size()];
     size_t queryEmbeddingPosition = 0;
     size_t j = 0;
     for (size_t i = 0; i < numTokens; i++) {
@@ -104,39 +153,38 @@ void ReRanker::modelReRank(){
     this->sequenceId++;
 
     size_t rawEmbeddingDimension = llama_model_n_embd(this->rerankingModel); //1024 dimensional embeddings, these will be projected using projector.safetensor
-    float* queryEmbeddingVector = llama_get_embeddings_ith(context, queryEmbeddingPosition);
+    const float* queryEmbeddingVector;
 
-    std::vector<float*> docEmbeddingVectors;
+    std::vector<const float*> docEmbeddingVectors;
+    size_t finalEmbeddingDimension;
 
-    // try{
-    //     safetensors::safetensors_t st = loadSafeTensors("projector.safetensors"); //jina specific
-    //     //project floats through safe tensors
+    try{
+        loadSafeTensors("projector.safetensors");
+        for(size_t i = 0; i < this->docs->size(); i++){
+            docEmbeddingVectors.push_back(project(llama_get_embeddings_ith(this->context, docEmbeddingPositions[i])));
+        }
+        queryEmbeddingVector = project(llama_get_embeddings_ith(this->context, queryEmbeddingPosition));
+        finalEmbeddingDimension = 512;
+        //jina reranker v3 paper says 256, but gguf model version's projection.safetensors only has two layers that project to 512
 
-
-    // } catch (const std::exception& e){
-    //     std::cerr << "Failed to load safe tensors from projector file: "<< e.what() << "\nUsing full sized non-projected embeddings." << std::endl;
-
-    //     for(size_t pos : docEmbeddingPositions){
-    //         float* emb = llama_get_embeddings_ith(this->context, pos);
-    //         docEmbeddingVectors.push_back(std::vector<float>(emb, emb + numEmbeddings));
-    //     }
-
-    // }
-
-
-    //calculations
-    for(size_t i = 0; i < this->docs->size(); i++){
-        float* emb = llama_get_embeddings_ith(this->context, docEmbeddingPositions[i]);
-        docEmbeddingVectors.push_back(emb);
-    } 
+    } catch (const std::exception& e){
+        std::cerr << "Failed to load safe tensors from projector file: "<< e.what() << "\nUsing full sized non-projected embeddings." << std::endl;
+        for(size_t i = 0; i < this->docs->size(); i++){
+            docEmbeddingVectors.push_back(llama_get_embeddings_ith(this->context, docEmbeddingPositions[i]));
+        } 
+        queryEmbeddingVector = llama_get_embeddings_ith(this->context, queryEmbeddingPosition);
+        finalEmbeddingDimension = 1024;
+    }
 
     for(size_t i = 0; i < docEmbeddingVectors.size(); i++){
-        this->rankings.push_back({cosineSimilarity(docEmbeddingVectors[i],queryEmbeddingVector, rawEmbeddingDimension),i});
+        this->rankings.push_back({cosineSimilarity(docEmbeddingVectors[i],queryEmbeddingVector, finalEmbeddingDimension),i});
     }
-    std::sort(this->rankings.begin(), this->rankings.end(),std::greater<>());
+    std::sort(this->rankings.begin(), this->rankings.end(), std::greater<>());
 
     delete [] docEmbeddingPositions;
-    
+    for (const float* e : docEmbeddingVectors){
+        delete [] e;
+    }
 }
 
 void ReRanker::setQueryAndDocuments(std::string& query, std::vector<std::string>& documents){
@@ -153,32 +201,4 @@ const std::vector<std::string> * ReRanker::getDocuments(){
 
 const std::vector<std::pair<float,int>> * ReRanker::getRankings(){
     return &this->rankings;
-}
-
-
-safetensors::safetensors_t loadSafeTensors(const char* projectorPath){
-    safetensors::safetensors_t st;
-    // std::string projectorPath = "projector.safetensors";
-    std::string warn, err;
-
-    #if defined(USE_MMAP)
-        printf("USE mmap\n");
-        bool ret = safetensors::mmap_from_file(projectorPath, &st, &warn, &err);
-    #else
-        bool ret = safetensors::load_from_file(projectorPath, &st, &warn, &err);
-    #endif
-
-    if (warn.size()) {
-        std::cout << "WARN: " << warn << "\n";
-    }
-
-    if (!ret) {
-        throw std::runtime_error("Failed to load with projector weights with error: " + err);
-    }
-
-    if (!safetensors::validate_data_offsets(st, err)) {
-        throw std::runtime_error("Invalid data offsets: " + err);
-    }
-
-    return st;
 }

@@ -7,6 +7,10 @@
 #include <llama-cpp.h>
 #include <llama.h>
 
+#define SAFETENSORS_CPP_NO_IMPLEMENTATION
+#include "safetensors.hh"
+#define USE_MMAP
+
 
 class ReRanker{
     private:
@@ -22,6 +26,14 @@ class ReRanker{
         llama_context* context;
         const llama_vocab* vocab;
         size_t sequenceId = 0;
+
+        safetensors::safetensors_t st;
+        const uint8_t* databuffer = nullptr;
+
+        void loadSafeTensors(const char* projectorPath);
+        const std::pair<const float*, std::vector<size_t>> getTensor(const char* name);
+        const float* linearLayer(const float* in, const float* weight, const float* bias, size_t inDim, size_t outDim, bool relu);
+        const float* project(const float* embedding);
 
     public:
         ReRanker(size_t gpuLayers, const char* rerankingModelPath);

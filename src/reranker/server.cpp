@@ -14,6 +14,7 @@ int main(int argc, char *argv[])
     //initialize llama.cpp reranker
     ReRanker jina(0,"jina-reranker-v3-Q8_0.gguf");
     
+
     std::string q = "What are the health benefits of green tea?";
     std::vector<std::string> documents = {
     "Green tea contains antioxidants called catechins that may help reduce inflammation and protect cells from damage.",
@@ -24,6 +25,13 @@ int main(int argc, char *argv[])
     "Le thé vert est riche en antioxydants et peut améliorer la fonction cérébrale.",
     };
 
+    // 0.461935 0
+    // 0.350195 4
+    // 0.254084 5
+    // 0.235676 2
+    // -0.128770 1
+    // -0.156261 3
+    
     jina.setQueryAndDocuments(q, documents);
     jina.modelReRank();
     const std::vector<std::pair<float,int>> * rankings = jina.getRankings();

@@ -7,7 +7,9 @@ set(CMAKE_CXX_COMPILER "/usr/bin/g++")
 
 set(CMAKE_CXX_STANDARD 17)
 
-add_executable(rerankerserver ../server.cpp ../reranker.cpp)
+add_executable(rerankerserver ../server.cpp ../reranker.cpp ../safetensors_impl.cpp)
+
+# set(CMAKE_BUILD_TYPE Debug) 
 
 add_library(asio_lib INTERFACE)
 target_compile_definitions(rerankerserver PRIVATE ASIO_STANDALONE)
