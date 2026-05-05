@@ -7,9 +7,9 @@
 
 #define USE_MMAP
 
-double cosineSimilarity(const std::vector<float>& a, const std::vector<float>& b){
+double cosineSimilarity(const float* a, const float* b, size_t size){
     float dot = 0, na = 0, nb = 0;
-        for (int i = 0; i < (int)a.size(); i++) {
+        for (int i = 0; i < size; i++) {
             dot += a[i] * b[i];
             na  += a[i] * a[i];
             nb  += b[i] * b[i];
@@ -36,7 +36,7 @@ ReRanker::ReRanker(size_t gpuLayers, const char* rerankingModelPath){
         
         this->contextParams = llama_context_default_params(); //consider splitting into multiple contexts and multithreading inference
         this->contextParams.embeddings = true;
-        this->contextParams.pooling_type = LLAMA_POOLING_TYPE_RANK;
+        this->contextParams.pooling_type = LLAMA_POOLING_TYPE_NONE; //model uses lastbutnotlate, so there are specific tokens that need extraction
         this->context = llama_init_from_model(rerankingModel, contextParams);
         this->vocab = llama_model_get_vocab(rerankingModel);
 
@@ -59,72 +59,83 @@ void ReRanker::modelReRank(){
     " passages, each indicated by a numerical identifier. Rank the passages based on their relevance to query:" + *(this->query) + '\n';
 
     for(size_t i = 0; i < this->docs->size(); i++){
-        userPrompt += "<passage id=\"" + std::to_string(i) + "\">\n" + (*(this->docs))[i] + "<|doc_emb|>\n</passage>\n";
+        userPrompt += "<passage id=\"" + std::to_string(i) + "\">\n" + (*(this->docs))[i] + "<|rerank_token|>\n</passage>\n";
     }
-    userPrompt += "\n<query>\n" + *(this->query) + "<|query_emb|>\n</query>\n<|im_end|>";
+    userPrompt += "\n<query>\n" + *(this->query) + "<|embed_token|>\n</query>\n<|im_end|>";
 
-    llama_token docEmbbeddingId, queryEmbeddingId;
+    llama_token docEmbeddingId, queryEmbeddingId;
     {
-        std::vector<llama_token> tmp(8);
-        int n = llama_tokenize(vocab, "<|doc_emb|>", 11, tmp.data(), 8, false, true);
-        docEmbbeddingId = tmp[0];
-        n = llama_tokenize(vocab, "<|query_emb|>", 13, tmp.data(), 8, false, true);
+        //gguf model uses different embedding token ids and names than listed in jina reranker v3 paper.
+        std::vector<llama_token> tmp(1);
+        int n = llama_tokenize(this->vocab, "<|embed_token|>", 15, tmp.data(), 1, false, true); //should be 151670
         queryEmbeddingId = tmp[0];
+        n = llama_tokenize(this->vocab, "<|rerank_token|>", 16, tmp.data(), 1, false, true); //should be 151671
+        docEmbeddingId = tmp[0];
     }
+
     std::string fullPrompt = systemPrompt + userPrompt;
     std::vector<llama_token> tokens(fullPrompt.size() + 64); //buffer size leg room
 
     size_t numTokens = llama_tokenize(this->vocab, fullPrompt.c_str(), fullPrompt.size(), tokens.data(), tokens.size(), true, true);
     tokens.resize(numTokens);
-    std::vector<size_t> docEmbeddingPositions;
-    size_t queryEmbeddingPosition = -1;
-    for (size_t i = 0; i < numTokens; i++) {
-        if (tokens[i] == docEmbbeddingId) {docEmbeddingPositions.push_back(i);}
-        if (tokens[i] == queryEmbeddingId) {queryEmbeddingPosition = i;}
-    }
 
+    size_t* docEmbeddingPositions = new size_t(this->docs->size());
+    size_t queryEmbeddingPosition = 0;
+    size_t j = 0;
+    for (size_t i = 0; i < numTokens; i++) {
+        if (tokens[i] == docEmbeddingId) {docEmbeddingPositions[j++] = i;}
+        else if (tokens[i] == queryEmbeddingId) {queryEmbeddingPosition = i;}
+    }
+    
     llama_batch batch = llama_batch_init(numTokens,0,1);
 
     for (int i = 0; i < numTokens; i++) {
         batch.token[i]     = tokens[i];
         batch.pos[i]       = i;
-        batch.n_seq_id[i]  = 1;
-        batch.seq_id[i][0] = 0;
+        batch.n_seq_id[i]  = 1; //how many sequences this token belongs to
+        batch.seq_id[i][0] = this->sequenceId; //which sequence it belongs to
 
-        batch.logits[i] = (tokens[i] == docEmbbeddingId || tokens[i] == queryEmbeddingId) ? 1 : 0;
+        batch.logits[i] = (tokens[i] == docEmbeddingId || tokens[i] == queryEmbeddingId) ? 1 : 0; //mark 1 for output
     }
     batch.n_tokens = numTokens;
     llama_decode(context, batch);
     llama_batch_free(batch);
-    llama_memory_seq_rm(llama_get_memory(this->context), sequenceId, -1,-1); //clear last sequence's kv cache values
+    llama_memory_seq_rm(llama_get_memory(this->context), sequenceId, -1,-1); //clear last sequence's kv cache values.
     this->sequenceId++;
 
-    size_t numEmbeddings = llama_model_n_embd(this->rerankingModel);
+    size_t rawEmbeddingDimension = llama_model_n_embd(this->rerankingModel); //1024 dimensional embeddings, these will be projected using projector.safetensor
+    float* queryEmbeddingVector = llama_get_embeddings_ith(context, queryEmbeddingPosition);
 
-    float* queryEmbedding = llama_get_embeddings_ith(context, queryEmbeddingPosition);
-    std::vector<float> queryEmbeddingVector(queryEmbedding, queryEmbedding + numEmbeddings);
+    std::vector<float*> docEmbeddingVectors;
 
-    std::vector<std::vector<float>> docEmbeddingVectors;
+    // try{
+    //     safetensors::safetensors_t st = loadSafeTensors("projector.safetensors"); //jina specific
+    //     //project floats through safe tensors
 
-    try{
-        safetensors::safetensors_t st = loadSafeTensors("projector.safetensors"); //jina specific
-        //project floats through safe tensors
-        
 
-    } catch (const std::exception& e){
-        std::cerr << "Failed to load safe tensors from projector file: "<< e.what() << "\nUsing full sized non-projected embeddings." << std::endl;
+    // } catch (const std::exception& e){
+    //     std::cerr << "Failed to load safe tensors from projector file: "<< e.what() << "\nUsing full sized non-projected embeddings." << std::endl;
 
-        for(size_t pos : docEmbeddingPositions){
-            float* emb = llama_get_embeddings_ith(this->context, pos);
-            docEmbeddingVectors.push_back(std::vector<float>(emb, emb + numEmbeddings));
-        }
+    //     for(size_t pos : docEmbeddingPositions){
+    //         float* emb = llama_get_embeddings_ith(this->context, pos);
+    //         docEmbeddingVectors.push_back(std::vector<float>(emb, emb + numEmbeddings));
+    //     }
 
-    }
+    // }
+
+
+    //calculations
+    for(size_t i = 0; i < this->docs->size(); i++){
+        float* emb = llama_get_embeddings_ith(this->context, docEmbeddingPositions[i]);
+        docEmbeddingVectors.push_back(emb);
+    } 
 
     for(size_t i = 0; i < docEmbeddingVectors.size(); i++){
-        this->rankings.push_back({cosineSimilarity(docEmbeddingVectors[i],queryEmbeddingVector),i});
+        this->rankings.push_back({cosineSimilarity(docEmbeddingVectors[i],queryEmbeddingVector, rawEmbeddingDimension),i});
     }
-    std::sort(this->rankings.begin(), this->rankings.end());
+    std::sort(this->rankings.begin(), this->rankings.end(),std::greater<>());
+
+    delete [] docEmbeddingPositions;
     
 }
 
@@ -132,15 +143,22 @@ void ReRanker::setQueryAndDocuments(std::string& query, std::vector<std::string>
     this->query = &query;
     this->docs = &documents;
 }
+const std::string * ReRanker::getQuery(){
+    return this->query;
+}
+
+const std::vector<std::string> * ReRanker::getDocuments(){
+    return this->docs;
+}
 
 const std::vector<std::pair<float,int>> * ReRanker::getRankings(){
-    return &rankings;
+    return &this->rankings;
 }
 
 
 safetensors::safetensors_t loadSafeTensors(const char* projectorPath){
     safetensors::safetensors_t st;
-    std::string projectorPath = "projector.safetensors";
+    // std::string projectorPath = "projector.safetensors";
     std::string warn, err;
 
     #if defined(USE_MMAP)

@@ -34,4 +34,7 @@ class ReRanker{
 
         const std::vector<std::pair<float,int>> * getRankings();
 
+        const std::string * getQuery();
+        const std::vector<std::string> * getDocuments();
+
 };
