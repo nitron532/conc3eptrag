@@ -17,65 +17,130 @@ status = cs16collection.parseAndPopulate(persistentPath)
 
 if status == 0: print(f"Found existing persistent chromadb collection at {persistentPath}")
 
-question = ""
+correctCount = 0
+totalCount = 0
 
-messages = [
-    {"role": "system", "content": """You are a helpful assistant that classifies computer science questions into the highest required cognitive level of the Revised Bloom's Taxonomy.
-The questions come from an introductory CS1 C++ course. You will be given context from course materials that the students are familiar with. Use the context and the following guidelines to classify.
+correctDict = {
+    "Remember":0,
+    "Understand":0,
+    "Apply":0,
+    "Analyze":0,
+    "Evaluate":0,
+    "Create":0
+}
 
-COGNITIVE LEVEL DEFINITIONS:
-- Remember: simple recall of syntax or facts.
-- Understand: predicting output of a code segment, simple high-level conceptual understanding, or using language features to evaluate expressions.
-- Apply: application of known procedures or familiar algorithms.
-- Analyze: detailed breakdowns of code segments and their purposes.
-- Evaluate: judging code or design against criteria, or comparing two approaches' pros and cons.
-- Create: designing an entirely new algorithm or program previously unseen by students.
+wrongDict = {
+    "Remember":0,
+    "Understand":0,
+    "Apply":0,
+    "Analyze":0,
+    "Evaluate":0,
+    "Create":0
+}
 
-OUTPUT FORMAT:
-First line: the single highest cognitive level label only.
-Then: three sentences of reasoning citing source file names from the CONTEXT.
-If the CONTEXT is unclear, still classify but note your uncertainty.
-Do not classify based on keywords associated with the cognitive levels.
+with open("qs.txt", "r+") as f:
+    for question, category in zip(f,f):
+        totalCount +=1
+        solutionMessages = [
+            {"role":"system", "content":"""You are a CS1 student that writes short and concise answers to computer science questions. Write pseudocode only if the question requires a code solution.
+            The questions come from an introductory CS1 C++ course. You will be given context from course materials that the students are familiar with. List the contex items used under Used Contexts at the end of your answer.
+             Use concepts from the CONTEXT to form your answer and cite what CONTEXT you used, if any."""}
+        ]
 
-CRITICAL RULE - APPLY vs CREATE:
-Variable names do NOT define an algorithm. Two functions are the SAME algorithm if they perform identical operations in the same logical order, regardless of variable names.
-f(a, b%a) and f(b, a%b) are the SAME algorithm — just swapped variable names.
-A slight variation, reordering, or renaming of an algorithm from the CONTEXT is still Apply.
-For example, if baseConversion(n,m) appears in the CONTEXT but the QUESTION asks for baseConversion(m,n), it is Apply.
-Do NOT classify as Create unless the algorithm is entirely absent from the CONTEXT and cannot be derived by any simple modification of material in the CONTEXT.
-When in doubt between Apply and Create (and NO OTHER SITUATIONS), choose Apply if the CONTEXT provided an example or explanation of the algorithm.
-"""},
+        similarChunks = cs16collection.queryCollection([question], 5)
+
+        mD = similarChunks["metadatas"][0]
+        sC = similarChunks["documents"][0]
+        documentsAndData = []
+        questionPrompt = "CONTEXT:"
+        for i in range(len(sC)):
+            dT = "Handout Page"
+            if "Handout" not in mD[i]["fileName"]: dT = "Lecture Page"
+            if mD[i]["fileType"] != "pdf": dT = "Code"
+            if "HW" in  mD[i]["fileName"]: dT = "Homework"
+            questionPrompt += f"\nContext Item {i+1}:\nFile Name:{mD[i]["fileName"]}\nDocument Type:{dT} \nPage Number:{mD[i]["page"]}\nWeek:{mD[i]["week"]}\n"
+            questionPrompt += f"Chunk Text: {sC[i]}"
+
+        questionPrompt += f"QUESTION: {question}\n"
+
+        firstQuestionPrompt = questionPrompt + f"INSTRUCTIONS: Write a short and concise answer using only concepts within the scope of the CONTEXT."
+
+        # print(firstQuestionPrompt)
+        print("question prompt for answer:", question)
+        solutionMessages.append({"role":"user","content": firstQuestionPrompt})
+        response = qwen.chat(
+            model = "miniqwenbloom2q8", messages = solutionMessages, think = False #since we have old repo answers, could skip this part...
+        )
+
+        solutionResponse = response["message"]["content"]
+
+        classifyMessages = [{"role":"user","content": firstQuestionPrompt}]
+
+        classifyMessages.append({"role":"assistant", "content":f"ANSWER_FOR_QUESTION: {solutionResponse}\n"})
+
+        print(solutionResponse)
+
+        classifyMessages.extend([{"role": "system", "content": """You are a helpful assistant that classifies computer science questions into their most used cognitive level of the Revised Bloom's Taxonomy.
+        The questions come from an introductory CS1 C++ course. You will be given CONTEXT from course materials that the students are familiar with, and ANSWER_FOR_QUESTION that describes a CS1 student's answer.
+                                Use the CONTEXT, ANSWER_FOR_QUESTION and the following guidelines to classify.
+
+        COGNITIVE LEVEL DEFINITIONS:
+        - Remember: simple recall of syntax, facts or commands.
+        - Understand: predicting output of a code segment, simple high-level conceptual understanding, or using language features to evaluate expressions.
+        - Apply: application of known procedures or familiar algorithms.
+        - Analyze: detailed breakdowns of code segments and their purposes, debugging, and correctness of approaches.
+        - Evaluate: judging code or design against criteria, or comparing two approaches' pros and cons.
+        - Create: designing an entirely new algorithm or program previously unseen by students.
+
+        OUTPUT FORMAT:
+        First line: the single highest cognitive level label only.
+        Then: three sentences of reasoning citing source file names from the CONTEXT or parts of the ANSWER_FOR_QUESTION.
+        Do not classify based on keywords associated with the cognitive levels.
+            
+        When choosing between Apply and Create, refer to the following rules:
+        If the ANSWER_FOR_QUESTION contains multiple references or modifications of logic and concepts in the CONTEXT, it is Apply.
+        If the ANSWER_FOR_QUESTION combines CONTEXT concepts or algorithms in a way unseen and unfamiliar in the CONTEXT, it is Create.
+        Create requires higher cognitive load than Apply.
+
+        """},
+        # examples?
+        # {"role":"user", "content": ""}
+        ])
+        secondQuestionPrompt = questionPrompt + f"""INSTRUCTIONS: Classify the QUESTION by analyzing the cognitive level used in the ANSWER_FOR_QUESTION in relation to the given CONTEXT.
+        State three sentences of reasoning for your classification and cite sources' file names from the CONTEXT. Mention parts of the ANSWER_FOR_QUESTION that influenced your classification.\n"""
+        classifyMessages.append({"role":"user", "content": secondQuestionPrompt})
+        response = qwen.chat(
+            model = "miniqwenbloom2q8", messages = classifyMessages, think = False
+        )
+
+        print(response["message"]["content"])
+        if response["message"]["content"][:response["message"]["content"].find("\n")].strip() == category.strip(): 
+            correctCount += 1
+            correctDict[category.strip()] += 1
+        else:
+            wrongDict[category.strip()] += 1
 
 
-    {"role": "user", "content": "CONTEXT:\nContext Item 1: The GCD of x and y is recursively computed as GCD(x, y%x).\nQUESTION: Write a function GCD(y, x%y) that computes the greatest common divisor."},
-    {"role": "assistant", "content": "Apply\nOne might initially think GCD(y, x%y) differs from GCD(x, y%x) because the variable names are swapped, but variable names are irrelevant to algorithm identity. The recursive structure and modulo operation are identical to Context Item 1. Since this algorithm appeared in the context under a simple variable swap, this is Apply not Create."},
+print(f"----total correct:{correctCount}/{totalCount}")
 
-    {"role": "user", "content": "CONTEXT:\nContext Item 1: The GCD of x and y is recursively computed as GCD(x, y%x).\nQUESTION: Design a function that finds the LCM of two numbers without using GCD."},
-    {"role": "assistant", "content": "Create\nThe question asks for an LCM algorithm that explicitly avoids GCD, which does not appear in the context in any form. No variable substitution or minor modification of Context Item 1 would produce an LCM algorithm. This requires designing a new procedure entirely absent from the course materials."},
-]
+print(correctDict)
+print(wrongDict)
 
-similarChunks = cs16collection.queryCollection([question], 5)
+"""
+using miniqwenbloom2 q4
+bruh 25/41
+{'Remember': 0, 'Understand': 4, 'Apply': 11, 'Analyze': 4, 'Evaluate': 1, 'Create': 5}
+{'Remember': 1, 'Understand': 4, 'Apply': 3, 'Analyze': 3, 'Evaluate': 1, 'Create': 4}
 
-mD = similarChunks["metadatas"][0]
-sC = similarChunks["documents"][0]
-documentsAndData = []
-questionPrompt = "CONTEXT:"
-for i in range(len(sC)):
-    dT = "Handout Page"
-    if "Handout" not in mD[i]["fileName"]: dT = "Lecture Page"
-    if mD[i]["fileType"] != "pdf": dT = "Code"
-    if "HW" in  mD[i]["fileName"]: dT = "Homework"
-    questionPrompt += f"\nContext Item {i+1}:\nFile Name:{mD[i]["fileName"]}\nDocument Type:{dT} \nPage Number:{mD[i]["page"]}\nWeek:{mD[i]["week"]}\n"
-    questionPrompt += f"Chunk Text: {sC[i]}"
 
-questionPrompt += f"QUESTION: {question}\n"
-questionPrompt += f"INSTRUCTIONS: Classify the QUESTION using the CONTEXT above. State three sentences of reasoning for your classification and cite sources' file names from the CONTEXT. If the CONTEXT is unclear, make a classification but state that your classification is unsure.\n"
-print(questionPrompt)
-messages.append({"role":"user","content": questionPrompt})
-response = qwen.chat(
-    model = "qwenbloom2", messages = messages, think = False
-)
-print(response["message"]["content"])
+using miniqwenbloom2 q8
+
+----total correct:31/41
+{'Remember': 1, 'Understand': 6, 'Apply': 8, 'Analyze': 6, 'Evaluate': 2, 'Create': 8}
+{'Remember': 0, 'Understand': 2, 'Apply': 6, 'Analyze': 1, 'Evaluate': 0, 'Create': 1}
+
+"""
+
 
 """
 if it needs more context, search thru the embeddings excluding those that were returned the first time and fall below

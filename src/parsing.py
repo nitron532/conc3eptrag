@@ -35,7 +35,7 @@ def returnParsedPDFText(filePath: str, ocr:PaddleOCR, dpi: int, imageid: str):
                 ocrWords = "\n".join(result[0]["rec_texts"])
                 if not ocrWords or ocrWords.isspace():
                     continue
-                pageText += ("\n<!STARTOFPDFIMAGE!>\n" + ocrWords + "\n<!ENDOFPDFIMAGE!>\n") # not actually recognized tokens
+                pageText += "\n" + ocrWords + "\n"
                 pil.save(f"../ocrdimages/{imageid} {blockid}.png", "PNG") # uncomment to verify cropped OCR sections
                 blockid += 1
             else:

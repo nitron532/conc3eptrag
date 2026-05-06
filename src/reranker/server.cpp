@@ -3,6 +3,8 @@
 
 using asio::ip::tcp;
 
+// #define DEBUG
+
 int main(int argc, char *argv[])
 {
     if (argc < 2) {
@@ -14,7 +16,7 @@ int main(int argc, char *argv[])
     //initialize llama.cpp reranker
     ReRanker jina(0,"jina-reranker-v3-Q8_0.gguf");
     
-
+#ifdef DEBUG
     std::string q = "What are the health benefits of green tea?";
     std::vector<std::string> documents = {
     "Green tea contains antioxidants called catechins that may help reduce inflammation and protect cells from damage.",
@@ -40,10 +42,8 @@ int main(int argc, char *argv[])
         std::cout << std::to_string((*rankings)[i].first) << " " << std::to_string((*rankings)[i].second) << std::endl;
     }
 
-
-
-
     return 0;
+#endif
 
     asio::io_context ioContext;
     tcp::acceptor acceptor(ioContext, tcp::endpoint(tcp::v4(), portNum));
