@@ -6,11 +6,13 @@ from paddleocr import PaddleOCR
 import numpy as np
 
 # parse pdfs into plain text, return each page of plain text in a list for one pdf
-def returnParsedPDFText(filePath: str, ocr:PaddleOCR, dpi: int, imageid: str):
+def returnParsedPDFText(filePath: str, ocr:PaddleOCR, dpi: int, imageid: str, skipTitle: bool):
     doc = pymupdf.open(f"{filePath}")
     pages = []
     blockid = 0
-    for page in doc:
+    for i, page in enumerate(doc):
+        if i == 0 and skipTitle: #heuristic for our own slides
+            continue
         pageBlocks = page.get_text("blocks", flags = pymupdf.TEXTFLAGS_BLOCKS | pymupdf.TEXT_PRESERVE_IMAGES)
         pageText = ""
         width = page.rect.width
@@ -60,14 +62,16 @@ def walkParse(inputDirPath: str, startId: int):
         for file in files:
             parsed = False
             if file.endswith(".pdf"):
-                pages = returnParsedPDFText(f"{root}/{file}", ocr, 300, file)
+                skipTitle = False
+                if "Handout" not in file: skipTitle = True
+                pages = returnParsedPDFText(f"{root}/{file}", ocr, 300, file, skipTitle)
                 parsed = True
                 pageNum = 0
                 for p in pages:
                     if not p.strip() or len(p) == 0:
                         pageNum += 1
                         continue
-                    meta = {"fileName": file, "week": root[root.rfind("/")+1:], "page": pageNum, "fileType": "pdf"}
+                    meta = {"fileName": file, "week": root[root.rfind("/")+1:], "page": pageNum, "fileType": "pdf", "id": str(id)}
                     ids.append(str(id))
                     chunks.append(p)
                     metadata.append(meta)

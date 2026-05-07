@@ -20,24 +20,59 @@ status = cs16collection.parseAndPopulate(persistentPath)
 if status == 0: print(f"Found existing persistent chromadb collection at {persistentPath}")
 
 
-def contactReRanker(similarChunks, question): #add support for full TCP comms or dump to a file on a shared system
+def contactReRanker(similarChunks, question): #TODO add support for full TCP comms or dump to a file on a shared system
     serverName = '127.0.0.1'
     serverPort = 2020
     clientSocket = socket(AF_INET, SOCK_STREAM)
     clientSocket.connect((serverName, serverPort))
     toRemove = string.whitespace.replace(' ', '') #TODO verify method 
     table = str.maketrans('', '', toRemove)
-    with open('reranker/contexts.txt', 'a+') as f:
-        for i, sC in enumerate(similarChunks["documents"][0]):
-            f.write(f"{similarChunks["ids"][0][i]}:{sC.translate(table)}\n")
-        f.write(question.translate(table))
-    sentence = "contexts.txt$EOM$"
-    # while(sentence != '@'): implement persistent connection to avoid tcp overhead and slowstart (but the constant cost is very small at this point)
-    clientSocket.send(sentence.encode())
-    serverResponse = clientSocket.recv(1024)
-    print("From server:", serverResponse.decode())
-    serverResponse = clientSocket.recv(1024) #server reranking, or some error
-    print("serverResponse", serverResponse)
+    fileName = "contexts.txt"
+
+    negatives = 1
+    queries = 3
+
+    additionalChunks = {}
+
+    while(negatives > 0 or queries > 0): #TODO implement persistent connection to avoid tcp overhead and slowstart (but the constant cost is very small at this point)
+        open(f"reranker/{fileName}", 'w').close() #clear it
+        with open(f'reranker/{fileName}', 'a+') as f:
+            for i, sC in enumerate(similarChunks["documents"][0]):
+                f.write(f"{similarChunks["ids"][0][i]}:{sC.translate(table)}\n")
+            f.write(question.translate(table))
+
+        input("ready to send to server?")
+
+        clientSocket.send(f"{fileName}$EOM$".encode())
+        serverResponse = clientSocket.recv(1024).decode()
+        if serverResponse != f"Server at {serverName}:{serverPort} will rerank {fileName}$EOM$":
+            print("Reranking server failed, using first found context items.")
+            break
+        print("From server:", serverResponse)
+
+        serverResponse = clientSocket.recv(1024).decode() #server reranking, or some error
+        passedIds = (serverResponse.split())[-1] #remove eom token
+        print("passedIds", passedIds)
+        if len(passedIds) < len(similarChunks["documents"][0]): #reranker found negatives and excluded them
+            failedIds = []
+            negatives = len(similarChunks["documents"][0]) - len(passedIds)
+            for i in range(len(similarChunks["ids"][0]) - 1, -1, -1):
+                print(similarChunks["ids"][0])
+                if similarChunks["ids"][0][i] not in passedIds:
+                    failedIds.append(similarChunks["ids"][0][i])
+                    similarChunks["ids"][0].pop(i)
+                    similarChunks["metadatas"][0].pop(i)
+                    similarChunks["documents"][0].pop(i)    #requery and get new rankings. query again for 8 excluding the negative ones (should i also exclude the positive ones?
+                    
+            metaFilter = {"ids":{"$nin": [j for j in failedIds]}}
+            additionalChunks = cs16collection.queryCollection([question], negatives, metaFilter) #with get filtering with metadata, and len()
+            for i in range(len(additionalChunks["ids"][0])):
+                similarChunks["ids"][0].append(additionalChunks["ids"][0][i])
+                similarChunks["metadatas"][0].append(additionalChunks["metadatas"][0][i])
+                similarChunks["documents"][0].append(additionalChunks["documents"][0][i])
+        else: negatives = 0
+        queries -= 1
+            
     clientSocket.close()
 
 
@@ -65,7 +100,7 @@ with open("qs.txt", "r+") as f:
 
 while True:
     pass
-correctCount = 0
+correctCount = 0 #should have an option for llm to request more context
 totalCount = 0
 
 correctDict = {

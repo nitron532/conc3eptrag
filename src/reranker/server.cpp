@@ -70,13 +70,13 @@ int main(int argc, char *argv[])
                 std::cout << "received: " << message << std::endl;
                 message = message.substr(0, message.size()-5);
                 if(message.substr(message.rfind('.')) == ".txt"){
-                    response += " will rerank " + message + "\n";
+                    response += " will rerank " + message + "$EOM$";
                     asio::write(socket, asio::buffer(response), ignoredError);
                     std::vector<std::string> documents;
                     std::string query;
                     std::ifstream infile(message);
                     std::string line;
-                    std::unordered_map<int,int> idToPos;
+                    std::vector<size_t> posToId;
                     size_t i = 0;
                     while(std::getline(infile, line)){
                         if(!isdigit(line[0])){
@@ -85,19 +85,23 @@ int main(int argc, char *argv[])
                         else{
                             size_t contextPos = line.find_first_not_of("0123456789");
                             documents.push_back(line.substr(contextPos+1));
-                            idToPos.insert({stoi(line.substr(0, contextPos)),i});
+                            posToId.push_back(stoi(line.substr(0, contextPos)));
                         }
                         i++;
-                    }
-                    for (auto& d : documents){
-                        std::cout << d << std::endl;
                     }
                     jina.setQueryAndDocuments(query, documents);
                     jina.modelReRank();
                     const std::vector<std::pair<float,int>> * rankings = jina.getRankings();
-                    for(int i = 0; i < rankings->size(); i++){
-                        std::cout << std::to_string((*rankings)[i].first) << " " << std::to_string((*rankings)[i].second) << std::endl;
+                    response = "";
+                    for(size_t i = 0; i < rankings->size(); i++){
+                        std::cout<<posToId[(*rankings)[i].second] << " " << std::to_string((*rankings)[i].first) << " " << std::to_string((*rankings)[i].second) << std::endl;
+                        if((*rankings)[i].first > 0){
+                            response += std::to_string(posToId[(*rankings)[i].second]) + " "; //append in order of most similar first
+                        }
                     }
+                    std::cout << response <<std::endl;
+                    response += "$EOM$";
+                    asio::write(socket,asio::buffer(response), ignoredError);
                 }
                 else{
                     response += " received message that didn't contain a txt file: " + message;

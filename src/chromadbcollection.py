@@ -52,10 +52,12 @@ class PersistentChromaDBCollection:
 
     def queryCollection(self,
                         queryTexts: list[str],
-                        numResults: int):
+                        numResults: int,
+                        filterMetaData: dict[str:Any] = None):
         return self.collection.query(
             query_texts=queryTexts,
-            n_results=numResults 
+            n_results=numResults,
+            where = filterMetaData
         )
 
     def getCollectionCount(self) -> int: return self.collection.count()

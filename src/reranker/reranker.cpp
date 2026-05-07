@@ -99,6 +99,7 @@ ReRanker::~ReRanker(){
     }
 
 void ReRanker::modelReRank(){
+    this->rankings.clear();
     if(this->query->size() == 0 || this->docs->size() == 0){
         std::cerr << "Error: Either provided documents or queries are of length 0." << std::endl;
         return;
@@ -151,7 +152,7 @@ void ReRanker::modelReRank(){
     llama_decode(context, batch);
     llama_batch_free(batch);
     llama_memory_seq_rm(llama_get_memory(this->context), sequenceId, -1,-1); //clear last sequence's kv cache values.
-    this->sequenceId++;
+    this->sequenceId = 0;
 
     size_t rawEmbeddingDimension = llama_model_n_embd(this->rerankingModel); //1024 dimensional embeddings, these will be projected using projector.safetensor
     const float* queryEmbeddingVector;
