@@ -1,6 +1,8 @@
 from ollama import Client
 from chromadbcollection import PersistentChromaDBCollection
 import os
+import string
+from socket import *
 
 abspath = os.path.abspath(__file__)
 dname = os.path.dirname(abspath)
@@ -17,6 +19,52 @@ status = cs16collection.parseAndPopulate(persistentPath)
 
 if status == 0: print(f"Found existing persistent chromadb collection at {persistentPath}")
 
+
+def contactReRanker(similarChunks, question): #add support for full TCP comms or dump to a file on a shared system
+    serverName = '127.0.0.1'
+    serverPort = 2020
+    clientSocket = socket(AF_INET, SOCK_STREAM)
+    clientSocket.connect((serverName, serverPort))
+    toRemove = string.whitespace.replace(' ', '') #TODO verify method 
+    table = str.maketrans('', '', toRemove)
+    with open('reranker/contexts.txt', 'a+') as f:
+        for i, sC in enumerate(similarChunks["documents"][0]):
+            f.write(f"{similarChunks["ids"][0][i]}:{sC.translate(table)}\n")
+        f.write(question.translate(table))
+    sentence = "contexts.txt$EOM$"
+    # while(sentence != '@'): implement persistent connection to avoid tcp overhead and slowstart (but the constant cost is very small at this point)
+    clientSocket.send(sentence.encode())
+    serverResponse = clientSocket.recv(1024)
+    print("From server:", serverResponse.decode())
+    serverResponse = clientSocket.recv(1024) #server reranking, or some error
+    print("serverResponse", serverResponse)
+    clientSocket.close()
+
+
+with open("qs.txt", "r+") as f:
+    for question, category in zip(f,f):
+        print("QUESTION----", question)
+        similarChunks = cs16collection.queryCollection([question], 8)
+        contactReRanker(similarChunks, question)
+        # print(similarChunks)
+        # mD = similarChunks["metadatas"][0]
+        # sC = similarChunks["documents"][0]
+        # scores = similarChunks["distances"][0]
+        # ids = similarChunks["ids"][0]
+        # for index, chunk in enumerate(sC):
+        #     print("Score:")
+        #     print(scores[index])
+        #     print("Metadata")
+        #     print(mD[index])
+        #     print("--------------------------------------")
+        #     print("Context:")
+        #     print(chunk)
+        
+        input()
+
+
+while True:
+    pass
 correctCount = 0
 totalCount = 0
 
@@ -44,7 +92,7 @@ with open("qs.txt", "r+") as f:
         solutionMessages = [
             {"role":"system", "content":"""You are a CS1 student that writes short and concise answers to computer science questions. Write pseudocode only if the question requires a code solution.
             The questions come from an introductory CS1 C++ course. You will be given context from course materials that the students are familiar with. List the contex items used under Used Contexts at the end of your answer.
-             Use concepts from the CONTEXT to form your answer and cite what CONTEXT you used, if any."""}
+             Use concepts from the CONTEXT to form your answer and cite specific CONTEXT lines you used verbatim, if any."""}
         ]
 
         similarChunks = cs16collection.queryCollection([question], 5)
@@ -52,21 +100,21 @@ with open("qs.txt", "r+") as f:
         mD = similarChunks["metadatas"][0]
         sC = similarChunks["documents"][0]
         documentsAndData = []
-        questionPrompt = "CONTEXT:"
+        contextPrompt = "CONTEXT:"
         for i in range(len(sC)):
             dT = "Handout Page"
             if "Handout" not in mD[i]["fileName"]: dT = "Lecture Page"
             if mD[i]["fileType"] != "pdf": dT = "Code"
             if "HW" in  mD[i]["fileName"]: dT = "Homework"
-            questionPrompt += f"\nContext Item {i+1}:\nFile Name:{mD[i]["fileName"]}\nDocument Type:{dT} \nPage Number:{mD[i]["page"]}\nWeek:{mD[i]["week"]}\n"
-            questionPrompt += f"Chunk Text: {sC[i]}"
+            contextPrompt += f"\nContext Item {i+1}:\nFile Name:{mD[i]["fileName"]}\nDocument Type:{dT} \nPage Number:{mD[i]["page"]}\nWeek:{mD[i]["week"]}\n"
+            contextPrompt += f"Chunk Text: {sC[i]}"
 
-        questionPrompt += f"QUESTION: {question}\n"
+        questionPrompt = contextPrompt + f"QUESTION: {question}\n"
 
         firstQuestionPrompt = questionPrompt + f"INSTRUCTIONS: Write a short and concise answer using only concepts within the scope of the CONTEXT."
 
         # print(firstQuestionPrompt)
-        print("question prompt for answer:", question)
+        print("\n------question prompt for answer:", question)
         solutionMessages.append({"role":"user","content": firstQuestionPrompt})
         response = qwen.chat(
             model = "miniqwenbloom2q8", messages = solutionMessages, think = False #since we have old repo answers, could skip this part...
@@ -114,11 +162,22 @@ with open("qs.txt", "r+") as f:
         )
 
         print(response["message"]["content"])
-        if response["message"]["content"][:response["message"]["content"].find("\n")].strip() == category.strip(): 
+        classification = response["message"]["content"][:response["message"]["content"].find("\n")].strip()
+        if classification == category.strip(): 
             correctCount += 1
             correctDict[category.strip()] += 1
+            logFile = "rightfile.txt"
         else:
+            logFile = "wrongfile.txt"
             wrongDict[category.strip()] += 1
+    
+        with open(logFile, "a+") as f:
+            f.write(f"----NUMBER {totalCount}:------\n\n")
+            f.write(f"PREDICTED: {classification} / ACUTAL: {category.strip()}\n")
+            f.write(f"\nQUESTION:\n {question}\n\n")
+            f.write(f"CONTEXT GIVEN:\n\n {contextPrompt}\n\n")
+            f.write(f"ANSWER: {response["message"]["content"]}\n\n")
+    
 
 
 print(f"----total correct:{correctCount}/{totalCount}")

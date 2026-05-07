@@ -1,5 +1,7 @@
 #include "reranker.h"
 #include <asio.hpp>
+#include <unordered_map>
+#include <fstream>
 
 using asio::ip::tcp;
 
@@ -27,12 +29,12 @@ int main(int argc, char *argv[])
     "Le thé vert est riche en antioxydants et peut améliorer la fonction cérébrale.",
     };
 
-    // 0.461935 0
-    // 0.350195 4
-    // 0.254084 5
-    // 0.235676 2
-    // -0.128770 1
-    // -0.156261 3
+    // // 0.461935 0
+    // // 0.350195 4
+    // // 0.254084 5
+    // // 0.235676 2
+    // // -0.128770 1
+    // // -0.156261 3
     
     jina.setQueryAndDocuments(q, documents);
     jina.modelReRank();
@@ -59,15 +61,49 @@ int main(int argc, char *argv[])
         std::cout << "Connected to " << clientPort << std::endl;
         std::string message;
         size_t readNum;
-        std::string response = "ok " + std::to_string(clientPort) + " I see you";
+        std::string response = "Server at " + socket.local_endpoint().address().to_string() + ":" + std::to_string(socket.local_endpoint().port());
         while(true){ //single client loop
             try{
                 readNum = asio::read_until(socket, readbuffer, delim);
                 message = std::string(asio::buffers_begin(readbuffer.data()),asio::buffers_begin(readbuffer.data())+readNum);
                 readbuffer.consume(readNum);
                 std::cout << "received: " << message << std::endl;
+                message = message.substr(0, message.size()-5);
+                if(message.substr(message.rfind('.')) == ".txt"){
+                    response += " will rerank " + message + "\n";
+                    asio::write(socket, asio::buffer(response), ignoredError);
+                    std::vector<std::string> documents;
+                    std::string query;
+                    std::ifstream infile(message);
+                    std::string line;
+                    std::unordered_map<int,int> idToPos;
+                    size_t i = 0;
+                    while(std::getline(infile, line)){
+                        if(!isdigit(line[0])){
+                            query = line;
+                        }
+                        else{
+                            size_t contextPos = line.find_first_not_of("0123456789");
+                            documents.push_back(line.substr(contextPos+1));
+                            idToPos.insert({stoi(line.substr(0, contextPos)),i});
+                        }
+                        i++;
+                    }
+                    for (auto& d : documents){
+                        std::cout << d << std::endl;
+                    }
+                    jina.setQueryAndDocuments(query, documents);
+                    jina.modelReRank();
+                    const std::vector<std::pair<float,int>> * rankings = jina.getRankings();
+                    for(int i = 0; i < rankings->size(); i++){
+                        std::cout << std::to_string((*rankings)[i].first) << " " << std::to_string((*rankings)[i].second) << std::endl;
+                    }
+                }
+                else{
+                    response += " received message that didn't contain a txt file: " + message;
+                    asio::write(socket, asio::buffer(response), ignoredError);
+                }
 
-                asio::write(socket, asio::buffer(response), ignoredError);
             } catch (std::exception const& ex){
                 std::cerr << "Error in client loop: " << ex.what() << "\nDisconnecting and returning to listening state" << std::endl;
                 break;

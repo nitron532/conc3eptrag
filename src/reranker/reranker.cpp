@@ -86,9 +86,10 @@ ReRanker::ReRanker(size_t gpuLayers, const char* rerankingModelPath){
         this->contextParams = llama_context_default_params(); //consider splitting into multiple contexts and multithreading inference
         this->contextParams.embeddings = true;
         this->contextParams.pooling_type = LLAMA_POOLING_TYPE_NONE; //model uses lastbutnotlate, so there are specific tokens that need extraction
+        this->contextParams.n_batch = 32768;
+        this->contextParams.n_ctx   = 32768;
         this->context = llama_init_from_model(rerankingModel, contextParams);
         this->vocab = llama_model_get_vocab(rerankingModel);
-
 }
 
 ReRanker::~ReRanker(){
