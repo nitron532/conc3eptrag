@@ -11,7 +11,7 @@ def returnParsedPDFText(filePath: str, ocr:PaddleOCR, dpi: int, imageid: str, sk
     pages = []
     blockid = 0
     for i, page in enumerate(doc):
-        if i == 0 and skipTitle: #heuristic for our own slides
+        if (i == 0 or i == len(doc)-1) and skipTitle: #heuristic for our own slides. skips title slides and ending slides
             continue
         pageBlocks = page.get_text("blocks", flags = pymupdf.TEXTFLAGS_BLOCKS | pymupdf.TEXT_PRESERVE_IMAGES)
         pageText = ""
@@ -38,7 +38,7 @@ def returnParsedPDFText(filePath: str, ocr:PaddleOCR, dpi: int, imageid: str, sk
                 if not ocrWords or ocrWords.isspace():
                     continue
                 pageText += "\n" + ocrWords + "\n"
-                pil.save(f"../ocrdimages/{imageid} {blockid}.png", "PNG") # uncomment to verify cropped OCR sections
+                # pil.save(f"../ocrdimages/{imageid} {blockid}.png", "PNG") # uncomment to verify cropped OCR sections
                 blockid += 1
             else:
                 pageText += block[4]
@@ -71,7 +71,7 @@ def walkParse(inputDirPath: str, startId: int):
                     if not p.strip() or len(p) == 0:
                         pageNum += 1
                         continue
-                    meta = {"fileName": file, "week": root[root.rfind("/")+1:], "page": pageNum, "fileType": "pdf", "id": str(id)}
+                    meta = {"fileName": file, "week": root[root.rfind("/")+1:], "page": pageNum, "fileType": "pdf", "id": str(id)} #redundant id for filtering
                     ids.append(str(id))
                     chunks.append(p)
                     metadata.append(meta)
@@ -82,7 +82,7 @@ def walkParse(inputDirPath: str, startId: int):
                     code = f.read()
                     if not code.strip() or len(code) == 0: continue
                     parsed = True
-                    meta = {"fileName": file, "week": root[root.rfind("/"):], "page": 0, "fileType": Path(file).suffix}
+                    meta = {"fileName": file, "week": root[root.rfind("/"):], "page": 0, "fileType": Path(file).suffix, "id": str(id)} #redundant id for filtering
                     ids.append(str(id))
                     chunks.append(code)
                     metadata.append(meta)

@@ -32,74 +32,52 @@ def contactReRanker(similarChunks, question): #TODO add support for full TCP com
     negatives = 1
     queries = 3
 
-    additionalChunks = {}
-
-    while(negatives > 0 or queries > 0): #TODO implement persistent connection to avoid tcp overhead and slowstart (but the constant cost is very small at this point)
-        open(f"reranker/{fileName}", 'w').close() #clear it
-        with open(f'reranker/{fileName}', 'a+') as f:
+    alreadySearchedIds = set()
+    while(negatives > 0 and queries > 0): #TODO implement persistent connection to avoid tcp overhead and slowstart (but the constant cost is very small at this point)
+        with open(f"reranker/{fileName}", 'w+') as f:
+            toWrite = ""
             for i, sC in enumerate(similarChunks["documents"][0]):
-                f.write(f"{similarChunks["ids"][0][i]}:{sC.translate(table)}\n")
-            f.write(question.translate(table))
-
-        input("ready to send to server?")
+                toWrite += (f"{similarChunks["ids"][0][i]}:{sC.translate(table)}\n")
+                alreadySearchedIds.add(int(similarChunks["ids"][0][i]))
+            toWrite += (question.translate(table))
+            f.write(toWrite)
 
         clientSocket.send(f"{fileName}$EOM$".encode())
         serverResponse = clientSocket.recv(1024).decode()
         if serverResponse != f"Server at {serverName}:{serverPort} will rerank {fileName}$EOM$":
             print("Reranking server failed, using first found context items.")
+            print("Received from server: ", serverResponse)
             break
-        print("From server:", serverResponse)
 
         serverResponse = clientSocket.recv(1024).decode() #server reranking, or some error
-        passedIds = (serverResponse.split())[-1] #remove eom token
-        print("passedIds", passedIds)
-        if len(passedIds) < len(similarChunks["documents"][0]): #reranker found negatives and excluded them
-            failedIds = []
-            negatives = len(similarChunks["documents"][0]) - len(passedIds)
-            for i in range(len(similarChunks["ids"][0]) - 1, -1, -1):
-                print(similarChunks["ids"][0])
-                if similarChunks["ids"][0][i] not in passedIds:
-                    failedIds.append(similarChunks["ids"][0][i])
-                    similarChunks["ids"][0].pop(i)
-                    similarChunks["metadatas"][0].pop(i)
-                    similarChunks["documents"][0].pop(i)    #requery and get new rankings. query again for 8 excluding the negative ones (should i also exclude the positive ones?
-                    
-            metaFilter = {"ids":{"$nin": [j for j in failedIds]}}
-            additionalChunks = cs16collection.queryCollection([question], negatives, metaFilter) #with get filtering with metadata, and len()
-            for i in range(len(additionalChunks["ids"][0])):
-                similarChunks["ids"][0].append(additionalChunks["ids"][0][i])
-                similarChunks["metadatas"][0].append(additionalChunks["metadatas"][0][i])
-                similarChunks["documents"][0].append(additionalChunks["documents"][0][i])
-        else: negatives = 0
+        rankings = (serverResponse.split(sep = '\n'))[:-1] #remove eom token
+        negatives = 0
+        # print("received rankings: ", rankings)
+        for i in range(len(similarChunks["ids"][0])):
+            if "-" in rankings[i]:
+                negatives += 1
+                failedIndex = int(rankings[i][-1])
+                similarChunks["ids"][0][failedIndex] = -1
+                similarChunks["metadatas"][0][failedIndex] = -1
+                similarChunks["documents"][0][failedIndex] = -1 
+        if negatives == 0: break
+
+        similarChunks["ids"][0][:] = [x for x in similarChunks["ids"][0] if x != -1]
+        similarChunks["metadatas"][0][:] = [x for x in similarChunks["metadatas"][0] if x != -1]
+        similarChunks["documents"][0][:] = [x for x in similarChunks["documents"][0] if x != -1]
+        metaFilter = {"id":{"$nin": [str(j) for j in alreadySearchedIds]}}
+        additionalChunks = cs16collection.queryCollection([question], negatives, metaFilter) #with get filtering with metadata, and len()
+        for i in range(negatives):
+            similarChunks["ids"][0].append(additionalChunks["ids"][0][i])
+            alreadySearchedIds.add(int(additionalChunks["ids"][0][i]))
+            similarChunks["metadatas"][0].append(additionalChunks["metadatas"][0][i])
+            similarChunks["documents"][0].append(additionalChunks["documents"][0][i])
         queries -= 1
+        
             
     clientSocket.close()
 
 
-with open("qs.txt", "r+") as f:
-    for question, category in zip(f,f):
-        print("QUESTION----", question)
-        similarChunks = cs16collection.queryCollection([question], 8)
-        contactReRanker(similarChunks, question)
-        # print(similarChunks)
-        # mD = similarChunks["metadatas"][0]
-        # sC = similarChunks["documents"][0]
-        # scores = similarChunks["distances"][0]
-        # ids = similarChunks["ids"][0]
-        # for index, chunk in enumerate(sC):
-        #     print("Score:")
-        #     print(scores[index])
-        #     print("Metadata")
-        #     print(mD[index])
-        #     print("--------------------------------------")
-        #     print("Context:")
-        #     print(chunk)
-        
-        input()
-
-
-while True:
-    pass
 correctCount = 0 #should have an option for llm to request more context
 totalCount = 0
 
@@ -121,16 +99,27 @@ wrongDict = {
     "Create":0
 }
 
-with open("qs.txt", "r+") as f:
+with open("qsfocus.txt", "r+") as f:
     for question, category in zip(f,f):
         totalCount +=1
         solutionMessages = [
             {"role":"system", "content":"""You are a CS1 student that writes short and concise answers to computer science questions. Write pseudocode only if the question requires a code solution.
-            The questions come from an introductory CS1 C++ course. You will be given context from course materials that the students are familiar with. List the contex items used under Used Contexts at the end of your answer.
-             Use concepts from the CONTEXT to form your answer and cite specific CONTEXT lines you used verbatim, if any."""}
+            The questions come from an introductory CS1 C++ course. You will be given context from A SMALL SUBSET of course materials that the students are familiar with. 
+             List the contex items used under Used Contexts at the end of your answer, and state if each was a direct application, or supplemented with general knowledge.
+             Form your answer at a CS1 level and quote specific CONTEXT lines you used verbatim, if any. 
+             If the context is unrelated, clearly state "CONTEXT INSUFFICIENT" in the last line of your answer."""}
         ]
 
+        #step 1. first analyze the presented context. are there enough relevant contexts to build a solution from?
+        #if not, run re ranker on concept map / query chroma db
+        #repeat at most 3 times
+        #if the context is still entirely insufficient, state the concepts you think it would require from a cs1 course. 
+        #step 2. you are a cs1 student...
+        #step 3 classify...
+        #step 4 (?). are there any citations/evidence in the answer that contradict your classification?
+
         similarChunks = cs16collection.queryCollection([question], 5)
+        contactReRanker(similarChunks, question)
 
         mD = similarChunks["metadatas"][0]
         sC = similarChunks["documents"][0]
@@ -164,14 +153,14 @@ with open("qs.txt", "r+") as f:
         print(solutionResponse)
 
         classifyMessages.extend([{"role": "system", "content": """You are a helpful assistant that classifies computer science questions into their most used cognitive level of the Revised Bloom's Taxonomy.
-        The questions come from an introductory CS1 C++ course. You will be given CONTEXT from course materials that the students are familiar with, and ANSWER_FOR_QUESTION that describes a CS1 student's answer.
+        The questions come from an introductory CS1 C++ course. You will be given CONTEXT from course materials that the students are familiar with, and ANSWER_FOR_QUESTION that describes a CS1 student's attempted answer.
                                 Use the CONTEXT, ANSWER_FOR_QUESTION and the following guidelines to classify.
 
         COGNITIVE LEVEL DEFINITIONS:
         - Remember: simple recall of syntax, facts or commands.
         - Understand: predicting output of a code segment, simple high-level conceptual understanding, or using language features to evaluate expressions.
-        - Apply: application of known procedures or familiar algorithms.
-        - Analyze: detailed breakdowns of code segments and their purposes, debugging, and correctness of approaches.
+        - Apply: application of known procedures, familiar algorithms, or similar design principles and paradigms.
+        - Analyze: detailed breakdowns of code segments and their purposes, debugging, and correctness of approaches and code.
         - Evaluate: judging code or design against criteria, or comparing two approaches' pros and cons.
         - Create: designing an entirely new algorithm or program previously unseen by students.
 
@@ -201,9 +190,9 @@ with open("qs.txt", "r+") as f:
         if classification == category.strip(): 
             correctCount += 1
             correctDict[category.strip()] += 1
-            logFile = "rightfile.txt"
+            logFile = "rightfilererank.txt"
         else:
-            logFile = "wrongfile.txt"
+            logFile = "wrongfilererank.txt"
             wrongDict[category.strip()] += 1
     
         with open(logFile, "a+") as f:
@@ -212,6 +201,7 @@ with open("qs.txt", "r+") as f:
             f.write(f"\nQUESTION:\n {question}\n\n")
             f.write(f"CONTEXT GIVEN:\n\n {contextPrompt}\n\n")
             f.write(f"ANSWER: {response["message"]["content"]}\n\n")
+        
     
 
 

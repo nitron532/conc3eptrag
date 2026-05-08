@@ -61,13 +61,13 @@ int main(int argc, char *argv[])
         std::cout << "Connected to " << clientPort << std::endl;
         std::string message;
         size_t readNum;
-        std::string response = "Server at " + socket.local_endpoint().address().to_string() + ":" + std::to_string(socket.local_endpoint().port());
         while(true){ //single client loop
             try{
+                std::string response = "Server at " + socket.local_endpoint().address().to_string() + ":" + std::to_string(socket.local_endpoint().port());
                 readNum = asio::read_until(socket, readbuffer, delim);
                 message = std::string(asio::buffers_begin(readbuffer.data()),asio::buffers_begin(readbuffer.data())+readNum);
                 readbuffer.consume(readNum);
-                std::cout << "received: " << message << std::endl;
+                // std::cout << "received: " << message << std::endl;
                 message = message.substr(0, message.size()-5);
                 if(message.substr(message.rfind('.')) == ".txt"){
                     response += " will rerank " + message + "$EOM$";
@@ -94,12 +94,9 @@ int main(int argc, char *argv[])
                     const std::vector<std::pair<float,int>> * rankings = jina.getRankings();
                     response = "";
                     for(size_t i = 0; i < rankings->size(); i++){
-                        std::cout<<posToId[(*rankings)[i].second] << " " << std::to_string((*rankings)[i].first) << " " << std::to_string((*rankings)[i].second) << std::endl;
-                        if((*rankings)[i].first > 0){
-                            response += std::to_string(posToId[(*rankings)[i].second]) + " "; //append in order of most similar first
-                        }
+                        response += std::to_string(posToId[(*rankings)[i].second]) + " " + std::to_string((*rankings)[i].first) + " " + std::to_string((*rankings)[i].second) + "\n";
                     }
-                    std::cout << response <<std::endl;
+                    std::cout <<"response: \n" << response <<std::endl;
                     response += "$EOM$";
                     asio::write(socket,asio::buffer(response), ignoredError);
                 }
