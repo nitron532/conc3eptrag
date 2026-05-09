@@ -3,37 +3,26 @@ from chromadbcollection import PersistentChromaDBCollection
 import os
 import string
 from socket import *
+from typing import Any
+import csv
 
 abspath = os.path.abspath(__file__)
 dname = os.path.dirname(abspath)
 os.chdir(dname)
 
-qwen = Client(host = "localhost:11434")
-
-cs16collection = PersistentChromaDBCollection("localhost:11434", 
-                                              "jinacpu", #"huggingface.co/jinaai/jina-code-embeddings-1.5b-GGUF:latest"
-                                              "../data/persistent",
-                                              "cs16collection")
-persistentPath = "../cs16materials"
-status = cs16collection.parseAndPopulate(persistentPath)
-
-if status == 0: print(f"Found existing persistent chromadb collection at {persistentPath}")
-
-
-def contactReRanker(similarChunks, question): #TODO add support for full TCP comms or dump to a file on a shared system
+def contactReRanker(similarChunks, question: str, maxReranks: int, filterMetaData: dict[string:Any] = None): #TODO add support for full TCP comms or dump to a file on a shared system
     serverName = '127.0.0.1'
     serverPort = 2020
     clientSocket = socket(AF_INET, SOCK_STREAM)
     clientSocket.connect((serverName, serverPort))
+
     toRemove = string.whitespace.replace(' ', '') #TODO verify method 
     table = str.maketrans('', '', toRemove)
     fileName = "contexts.txt"
-
     negatives = 1
-    queries = 3
-
     alreadySearchedIds = set()
-    while(negatives > 0 and queries > 0): #TODO implement persistent connection to avoid tcp overhead and slowstart (but the constant cost is very small at this point)
+
+    while(negatives > 0 and maxReranks > 0): #TODO implement persistent connection to avoid tcp overhead and slowstart (but the constant cost is very small at this point)
         with open(f"reranker/{fileName}", 'w+') as f:
             toWrite = ""
             for i, sC in enumerate(similarChunks["documents"][0]):
@@ -65,17 +54,35 @@ def contactReRanker(similarChunks, question): #TODO add support for full TCP com
         similarChunks["ids"][0][:] = [x for x in similarChunks["ids"][0] if x != -1]
         similarChunks["metadatas"][0][:] = [x for x in similarChunks["metadatas"][0] if x != -1]
         similarChunks["documents"][0][:] = [x for x in similarChunks["documents"][0] if x != -1]
-        metaFilter = {"id":{"$nin": [str(j) for j in alreadySearchedIds]}}
-        additionalChunks = cs16collection.queryCollection([question], negatives, metaFilter) #with get filtering with metadata, and len()
+
+        mdFilter = {"id":{"$nin": [str(j) for j in alreadySearchedIds]}}
+
+        if filterMetaData:
+            mdFilter = {"$and":[filterMetaData, mdFilter]}
+
+        additionalChunks = cs16collection.queryCollection([question], negatives, mdFilter) #with get filtering with metadata, and len()
         for i in range(negatives):
             similarChunks["ids"][0].append(additionalChunks["ids"][0][i])
             alreadySearchedIds.add(int(additionalChunks["ids"][0][i]))
             similarChunks["metadatas"][0].append(additionalChunks["metadatas"][0][i])
             similarChunks["documents"][0].append(additionalChunks["documents"][0][i])
-        queries -= 1
+        maxReranks -= 1
         
             
     clientSocket.close()
+    return similarChunks #unnecessary?
+
+
+qwen = Client(host = "localhost:11434")
+
+cs16collection = PersistentChromaDBCollection("localhost:11434", 
+                                              "jinacpu", #"huggingface.co/jinaai/jina-code-embeddings-1.5b-GGUF:latest"
+                                              "../data/persistent",
+                                              "cs16collection")
+persistentPath = "../cs16materials"
+status = cs16collection.parseAndPopulate(persistentPath)
+
+if status == 0: print(f"Found existing persistent chromadb collection at {persistentPath}")
 
 
 correctCount = 0 #should have an option for llm to request more context
@@ -99,16 +106,51 @@ wrongDict = {
     "Create":0
 }
 
+#set up dict for course materials
+with open("coursematerials.csv", mode = "r", newline = "") as f:
+    reader = csv.DictReader(f)
+    materialRows = [row for row in reader]
+
+materialIdsToNames = {}
+for rowDict in materialRows:
+    materialIdsToNames[int(rowDict["id"])] = rowDict["fileName"]
+
+#set up dict for concepts
+with open("concepts.csv", mode = "r", newline = "") as f:
+    reader = csv.DictReader(f)
+    conceptRows = [row for row in reader]
+
+conceptNamesToMaterialIdLists = {} #depending on how questions are tagged with concepts, you could use conceptIdsToMaterialIds instead (int:int instead of string:int)
+
+for rowDict in conceptRows:
+    conceptNamesToMaterialIdLists[rowDict["conceptName"]] = list(map(int,rowDict["materialIds"][1:len(rowDict["materialIds"])-1].split(","))) # conceptName:list[int]
+
+
+#let llm choose needed topics? but our questions are already labeled with topics
+
 with open("qsfocus.txt", "r+") as f:
     for question, category in zip(f,f):
         totalCount +=1
         solutionMessages = [
-            {"role":"system", "content":"""You are a CS1 student that writes short and concise answers to computer science questions. Write pseudocode only if the question requires a code solution.
-            The questions come from an introductory CS1 C++ course. You will be given context from A SMALL SUBSET of course materials that the students are familiar with. 
+            {"role":"system", "content":"""You are an average CS1 student that writes short and concise answers to computer science questions. Write pseudocode only if the question requires a code solution.
+            The QUESTION comes from an introductory CS1 C++ course, tagged with relevant concepts at the start inside curly braces. You will be given context from A SMALL SUBSET of course materials from these concepts.
              List the contex items used under Used Contexts at the end of your answer, and state if each was a direct application, or supplemented with general knowledge.
-             Form your answer at a CS1 level and quote specific CONTEXT lines you used verbatim, if any. 
+             Form your answer at an average CS1 level and quote specific CONTEXT lines you used verbatim, if any. 
              If the context is unrelated, clearly state "CONTEXT INSUFFICIENT" in the last line of your answer."""}
         ]
+        topicsListEnd = question.find("}")
+        topicsList = question[1:topicsListEnd].split() # space separated, with underscores for spaces in names (for parsing). concept map can have spaces for names
+        for i,topic in enumerate(topicsList):
+            topicsList[i] = topic.replace("_", " ")
+
+        materialNames = set()
+        for topic in topicsList:
+            for materialId in conceptNamesToMaterialIdLists[topic]:
+                materialNames.add(materialIdsToNames[materialId].strip()) #add fileNames to set, avoiding duplicate file names
+        materialNames = list(materialNames)
+
+        #only search materials that are up to the week of the question?
+        #include name of file in .cpp files as a comment?
 
         #step 1. first analyze the presented context. are there enough relevant contexts to build a solution from?
         #if not, run re ranker on concept map / query chroma db
@@ -118,8 +160,10 @@ with open("qsfocus.txt", "r+") as f:
         #step 3 classify...
         #step 4 (?). are there any citations/evidence in the answer that contradict your classification?
 
-        similarChunks = cs16collection.queryCollection([question], 5)
-        contactReRanker(similarChunks, question)
+        mdFilter = {"fileName":{"$in": materialNames}}
+
+        similarChunks = cs16collection.queryCollection([question], 10, mdFilter)
+        similarChunks = contactReRanker(similarChunks, question, 2, mdFilter)
 
         mD = similarChunks["metadatas"][0]
         sC = similarChunks["documents"][0]
@@ -153,7 +197,7 @@ with open("qsfocus.txt", "r+") as f:
         print(solutionResponse)
 
         classifyMessages.extend([{"role": "system", "content": """You are a helpful assistant that classifies computer science questions into their most used cognitive level of the Revised Bloom's Taxonomy.
-        The questions come from an introductory CS1 C++ course. You will be given CONTEXT from course materials that the students are familiar with, and ANSWER_FOR_QUESTION that describes a CS1 student's attempted answer.
+        The QUESTION, tagged with relevant concepts inside curly brackets at the start, comes from an introductory CS1 C++ course. You will be given context from A SMALL SUBSET of course materials from these concepts, and ANSWER_FOR_QUESTION that describes a CS1 student's attempted answer.
                                 Use the CONTEXT, ANSWER_FOR_QUESTION and the following guidelines to classify.
 
         COGNITIVE LEVEL DEFINITIONS:
@@ -170,8 +214,8 @@ with open("qsfocus.txt", "r+") as f:
         Do not classify based on keywords associated with the cognitive levels.
             
         When choosing between Apply and Create, refer to the following rules:
-        If the ANSWER_FOR_QUESTION contains multiple references or modifications of logic and concepts in the CONTEXT, it is Apply.
         If the ANSWER_FOR_QUESTION combines CONTEXT concepts or algorithms in a way unseen and unfamiliar in the CONTEXT, it is Create.
+        If the ANSWER_FOR_QUESTION contains multiple references or modifications of logic and concepts in the CONTEXT, or ANY direct applications, it is Apply.
         Create requires higher cognitive load than Apply.
 
         """},
@@ -190,9 +234,9 @@ with open("qsfocus.txt", "r+") as f:
         if classification == category.strip(): 
             correctCount += 1
             correctDict[category.strip()] += 1
-            logFile = "rightfilererank.txt"
+            logFile = "rightfilererank3.txt"
         else:
-            logFile = "wrongfilererank.txt"
+            logFile = "wrongfilererank3.txt"
             wrongDict[category.strip()] += 1
     
         with open(logFile, "a+") as f:
