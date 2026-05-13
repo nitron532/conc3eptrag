@@ -1,11 +1,8 @@
 #include "reranker.h"
 #include <asio.hpp>
-#include <unordered_map>
 #include <fstream>
 
 using asio::ip::tcp;
-
-// #define DEBUG
 
 int main(int argc, char *argv[])
 {
@@ -17,36 +14,8 @@ int main(int argc, char *argv[])
 
     //initialize llama.cpp reranker
     ReRanker jina(0,"jina-reranker-v3-Q8_0.gguf");
-    
-#ifdef DEBUG
-    std::string q = "What are the health benefits of green tea?";
-    std::vector<std::string> documents = {
-    "Green tea contains antioxidants called catechins that may help reduce inflammation and protect cells from damage.",
-    "El precio del café ha aumentado un 20% este año debido a problemas en la cadena de suministro.",
-    "Studies show that drinking green tea regularly can improve brain function and boost metabolism.",
-    "Basketball is one of the most popular sports in the United States.",
-    "绿茶富含儿茶素等抗氧化剂，可以降低心脏病风险，还有助于控制体重。",
-    "Le thé vert est riche en antioxydants et peut améliorer la fonction cérébrale.",
-    };
 
-    // // 0.461935 0
-    // // 0.350195 4
-    // // 0.254084 5
-    // // 0.235676 2
-    // // -0.128770 1
-    // // -0.156261 3
-    
-    jina.setQueryAndDocuments(q, documents);
-    jina.modelReRank();
-    const std::vector<std::pair<float,int>> * rankings = jina.getRankings();
-
-    for(int i = 0; i < rankings->size(); i++){
-        std::cout << std::to_string((*rankings)[i].first) << " " << std::to_string((*rankings)[i].second) << std::endl;
-    }
-
-    return 0;
-#endif
-
+    //TODO use unix domain socket for local comms. keep an option for TCP though, if somebody wants to run reranker on a different computer
     asio::io_context ioContext;
     tcp::acceptor acceptor(ioContext, tcp::endpoint(tcp::v4(), portNum));
     std::error_code ignoredError;

@@ -1,25 +1,11 @@
 from ollama import Client
 from chromadbcollection import PersistentChromaDBCollection
-from datasetbuilder import append_training_example
 import os
 import string
 from socket import *
 from typing import Any
 from itertools import islice
 import csv
-
-
-        #only search materials that are up to the week of the question?
-        #include name of file in .cpp files as a comment?
-        #have it be able to request more context and mark specific contexts and their ids as bad (ascii table, weird graphics, repeating recursion graphic), add to already searched (might need to be static and then reset on new questions)
-
-        #step 1. first analyze the presented context. are there enough relevant contexts to build a solution from?
-        #if not, run re ranker on concept map / query chroma db
-        #repeat at most 3 times
-        #if the context is still entirely insufficient, state the concepts you think it would require from a cs1 course. 
-        #step 2. you are a cs1 student...
-        #step 3 classify...
-        #step 4 (?). are there any citations/evidence in the answer that contradict your classification?
 
 abspath = os.path.abspath(__file__)
 dname = os.path.dirname(abspath)
@@ -41,18 +27,17 @@ def formPrompt(context: list[str], metadatas: list[str], question: str, question
 
     return prompt
 
-def contactReRanker(similarChunks, question: str, maxReranks: int, alreadySearchedIds: set, filterMetaData: dict[string:Any] = None): #TODO add support for full TCP comms or dump to a file on a shared system
-    serverName = '127.0.0.1'
-    serverPort = 2020
-    clientSocket = socket(AF_INET, SOCK_STREAM)
-    clientSocket.connect((serverName, serverPort))
+
+# allowing the LLM to rerank is good, but way too slow.
+def contactReRanker(similarChunks, question: str, maxReranks: int, alreadySearchedIds: set, serverName: str, serverPort: int, clientSocket: socket,
+                    filterMetaData: dict[string:Any] = None): 
 
     toRemove = string.whitespace.replace(' ', '') #TODO verify method 
     table = str.maketrans('', '', toRemove)
     fileName = "contexts.txt"
     negatives = 1
 
-    while(negatives > 0 and maxReranks > 0): #TODO implement persistent connection to avoid tcp overhead and slowstart (but the constant cost is very small at this point)
+    while(negatives > 0 and maxReranks > 0):
         with open(f"reranker/{fileName}", 'w+') as f:
             toWrite = ""
             for i, sC in enumerate(similarChunks["documents"][0]):
@@ -99,12 +84,9 @@ def contactReRanker(similarChunks, question: str, maxReranks: int, alreadySearch
             similarChunks["metadatas"][0].append(additionalChunks["metadatas"][0][i])
             similarChunks["documents"][0].append(additionalChunks["documents"][0][i])
         
-            
-    clientSocket.close()
     return similarChunks #unnecessary?
 
-
-qwen = Client(host = "localhost:11434")
+ollama = Client(host = "localhost:11434")
 
 cs16collection = PersistentChromaDBCollection("localhost:11434", 
                                               "jinacpu", #"huggingface.co/jinaai/jina-code-embeddings-1.5b-GGUF:latest"
@@ -114,10 +96,6 @@ persistentPath = "../cs16materials"
 status = cs16collection.parseAndPopulate(persistentPath) #TODO should have option to just reembed a speciifc document
 
 if status == 0: print(f"Found existing persistent chromadb collection at {persistentPath}")
-
-
-correctCount = 0 #should have an option for llm to request more context
-totalCount = 0
 
 #set up dict for course materials
 with open("coursematerials.csv", mode = "r", newline = "") as f:
@@ -138,8 +116,11 @@ conceptNamesToMaterialIdLists = {} #depending on how questions are tagged with c
 for rowDict in conceptRows:
     conceptNamesToMaterialIdLists[rowDict["conceptName"]] = list(map(int,rowDict["materialIds"][1:len(rowDict["materialIds"])-1].split(","))) # conceptName:list[int]
 
-
-#let llm choose needed topics? but our questions are already labeled with topics
+#TODO add support for full TCP comms (not writing to file) and/or unix domain socket support
+serverName = '127.0.0.1'
+serverPort = 2020
+clientSocket = socket(AF_INET, SOCK_STREAM)
+clientSocket.connect((serverName, serverPort))
 
 with open("qsfocusans.txt", "r") as f:
     while True:
@@ -151,7 +132,6 @@ with open("qsfocusans.txt", "r") as f:
         category = linesList[2] #blanket, but keep for now
 
         materialNames = set()
-        totalCount += 1
         alreadySearchedIds = set()
 
         topicsListEnd = question.find("}")
@@ -172,8 +152,8 @@ with open("qsfocusans.txt", "r") as f:
         similarChunksAnswer = cs16collection.queryCollection([answer], 15, mdFilter)
         similarChunksQuestions = cs16collection.queryCollection([question],15, mdFilter)
 
-        similarChunksAnswer = contactReRanker(similarChunksAnswer, answer, 2, alreadySearchedIds, mdFilter)
-        similarChunksQuestions = contactReRanker(similarChunksQuestions, question, 2, alreadySearchedIds, mdFilter)
+        similarChunksAnswer = contactReRanker(similarChunksAnswer, answer, 2, alreadySearchedIds, serverName, serverPort, clientSocket, mdFilter)
+        similarChunksQuestions = contactReRanker(similarChunksQuestions, question, 2, alreadySearchedIds, serverName, serverPort, clientSocket, mdFilter)
 
         answerIds = set(similarChunksAnswer["ids"][0])
         questionIdsToIndexes = {}
@@ -206,9 +186,9 @@ with open("qsfocusans.txt", "r") as f:
             You will receive a prompt structured and labeled in this order:
             1. QUESTION: A test question from an introductory CS1 C++ course.
             2. ANSWER: The answer key answer to the QUESTION.
-            You will output a response structured like so:
-            1. CONCEPTS: A list of CONCEPTs used in the ANSWER to answer the QUESTION.
-            2. EXPLANATIONS: For each CONCEPT, a concise analysis of how the ANSWER uses the CONCEPT, limited to one sentence.
+            You will output a response structured with these capitalized headers:
+            1. CONCEPTS: An enumerated list of CONCEPTs used in the ANSWER to answer the QUESTION.
+            2. EXPLANATIONS: An list of explanations for each CONCEPT labeled by the CONCEPT, each a concise analysis of how the ANSWER uses the CONCEPT, limited to one sentence.
             Output only CONCEPTs DIRECTLY found in the ANSWER.
             """}
         ]
@@ -222,12 +202,14 @@ with open("qsfocusans.txt", "r") as f:
         #TODO replace above prompt formation with the function, for now i need context prompt separated for debugging in the log files
 
 
+        with open("results3.txt", "a") as r:
+            r.write("--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
+            r.write(f"\n------QUESTION: {question}\n")
+            r.write(f"\n-------ANSWER: {answer}\n\n")
 
-        print(f"\n------QUESTION: {question}\n")
-        print(f"\n-------ANSWER: {answer}\n\n")
         analysisMessages.append({"role":"user","content": firstQuestionPrompt})
 
-        response = qwen.chat(
+        response = ollama.chat(
             model = "miniqwenbloom2q8", messages = analysisMessages, think = False
         )
 
@@ -237,9 +219,8 @@ with open("qsfocusans.txt", "r") as f:
 
         classifyMessages.append({"role":"assistant", "content":f"ANALYSIS: {analysisResponse}\n"})
 
-        print("\nANALYSIS RESPONSE -----\n")
-
-        print(analysisResponse)
+        with open("results3.txt", "a") as r:
+            r.write(f"\nANALYSIS RESPONSE -----\n{analysisResponse}")
 
         contextPrompt = "CONTEXT:"
         for i in range(len(sC)):
@@ -250,9 +231,6 @@ with open("qsfocusans.txt", "r") as f:
             contextPrompt += f"\nContext Item {i}:\nFile Name:{mD[i]["fileName"]}\nDocument Type:{dT} \nPage Number:{mD[i]["page"]}\nWeek:{mD[i]["week"]}\n"
             contextPrompt += f"Chunk Text: {sC[i]}"
 
-
-        # print(f"\n------CONTEXT: {contextPrompt}\n")
-
         systemPrompt = """
                         You are a CS1 instructor that will label the individual component concepts used in a question under the Revised Bloom's Taxonomy.
                         You will receive an input in this structure:
@@ -261,7 +239,7 @@ with open("qsfocusans.txt", "r") as f:
                         3. ANALYSIS: A list consisting of CONCEPTS used in the QUESTION and ANSWER, and EXPLANATIONs of how each CONCEPT was used in the QUESTION and ANSWER.
                         4. CONTEXT: A small subset of CS1 course materials that should be related to the QUESTION. If any CONTEXT items are unhelpful, ignore them.
                         5. INSTRUCTIONS: A guideline you will follow for classifying using the CONTEXT.
-                        For each CONCEPT and EXPLANATION together, you will output:
+                        For each CONCEPT and EXPLANATION together, you will output in the same order as the ANALYSIS:
                         1. A Revised Bloom's Taxonomy Level
                         2. A concise explanation of why it falls under this level, limited to one sentence.
                         """
@@ -273,7 +251,7 @@ with open("qsfocusans.txt", "r") as f:
                 f"{contextPrompt}\n"
                 "INSTRUCTIONS: Using the ANALYSIS above, classify each CONCEPT used in the ANALYSIS with its EXPLANATION "
                 "under the Revised Bloom's Taxonomy, citing relevant CONTEXT items only!. "
-                "For each CONCEPT, output exactly:\n"
+                "For each CONCEPT, output in the same order as the ANALYSIS exactly:\n"
                 "CONCEPT: <concept name>\n"
                 "LEVEL: <Remember | Understand | Apply | Analyze | Evaluate | Create>\n"
                 "REASON: <one sentence citing the specific CONTEXT file that supports this level>\n"
@@ -284,14 +262,59 @@ with open("qsfocusans.txt", "r") as f:
                 "Analyze: If the CONCEPT was broken down into component parts in the ANSWER, debugged by the ANSWER, or had its purpose explained in the ANSWER." #it keeps analyzing the explanation as analyze lol
                 "Evaluate: If the CONCEPT's efficiency was described, was compared against other approaches in terms of efficiency, style, or purpose, or evaluated against a set of criteria."
                 "Create: If the CONCEPT was abstracted and combined with other CONCEPTS in a novel way not seen in the CONTEXT, or if a new algorithm resulted from the combination of multiple CONCEPTs."
-                "You must cite relevant CONTEXT in your classification, limit your citations to relevant CONTEXT only. If the ANSWER has no code, then it do not label as Apply or Create."
+                "You will cite relevant CONTEXT in your classification, limit your citations to relevant CONTEXT only. If the ANSWER has no code, then it do not label as Apply or Create."
             )
         })
 
-        #add verifier stage to see if a novelty was created? 
+        response = ollama.chat("miniqwenbloom2q8", messages = classifyMessages, think = False)
+
+
+        with open("results3.txt", "a") as r:
+            r.write(f"\nCLASSES RESPONSE----\n {response["message"]["content"]}")
+            r.write("\n------------------ENDCLASSES------------------------------\n")
+
+        llmConcepts = analysisResponse[analysisResponse.find("EXPLANATIONS:\n") + 14:]
+
+        conceptMessages = [{"role":"user", "content":f"""
+            Given this list of CS1 Concepts:
+            {list(conceptNamesToMaterialIdLists.keys())}
+            Map each of the following LLMCONCEPTS, each of which have explanations, to their corresponding concepts in the list of CS1 Concepts.
+            The words of the LLMCONCEPTS should hint to the corresponding CS1 concept.
+            Output ONLY <llm concept>:<CS1 concept>:
+            LLMCONCEPTS:
+            {llmConcepts}
+            """}
+        ]
+
+        response = ollama.chat("miniqwenbloom2q8", messages = conceptMessages, think = False)
+
+        conceptMapConcepts = []
+        conceptResponse = response["message"]["content"]
+        with open("results3.txt","a") as r:
+            r.write(f"\nID'DCONCEPTSBYLLM: {conceptResponse}\n")
+        colon = 0
+        newline = 0
+        print("conceptResponse:", conceptResponse)
+        while(newline != -1):
+            colon = conceptResponse.find(":")
+            newline = conceptResponse.find("\n")
+            if newline == -1: 
+                conceptMapConcepts.append(conceptResponse[colon+1:])
+            else: conceptMapConcepts.append(conceptResponse[colon+1:newline])
+
+            conceptResponse = conceptResponse[newline+1:]
+
         
-        response = qwen.chat("miniqwenbloom2q8", messages = classifyMessages, think = False)
+        print(conceptMapConcepts)
 
-        print("\nCLASSES RESPONSE----\n")
+        with open("results3.txt","a") as r:
+            r.write(f"\nCMMAPCONCEPTS: {conceptMapConcepts}\n")
+            r.write(f"\nENDCONTEXT---------------------------------------------------------------")
 
-        print(response["message"]["content"])
+        with open("results3.txt", "a") as r:
+            r.write(f"\nCONTEXT ------------------------------------------------\n{contextPrompt}")
+            r.write("\n---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
+
+
+      
+clientSocket.close()
