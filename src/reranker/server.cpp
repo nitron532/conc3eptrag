@@ -21,18 +21,6 @@ void clientLoop(Socket& socket, ReRanker& jina, asio::streambuf& readbuffer, std
             std::vector<size_t> posToId;
             std::string line = "";
 
-/*
-        while(newline != -1):
-            colon = conceptResponse.find(":")
-            newline = conceptResponse.find("\n")
-            if newline == -1: 
-                conceptMapConcepts.append(conceptResponse[colon+1:])
-            else: conceptMapConcepts.append(conceptResponse[colon+1:newline])
-
-            conceptResponse = conceptResponse[newline+1:]
-*/
-
-
             size_t newLine = 0;
             while(newLine != std::string::npos) {
                 newLine = message.find("\n");
