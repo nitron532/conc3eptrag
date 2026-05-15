@@ -11,7 +11,7 @@ def returnParsedPDFText(filePath: str, ocr:PaddleOCR, dpi: int, imageid: str, sk
     pages = []
     blockid = 0
     for i, page in enumerate(doc):
-        if (i == 0 or i == len(doc)-1) and skipTitle: #heuristic for our own slides. skips title slides and ending slides
+        if (i == 0 or i == len(doc)-1) and skipTitle: #heuristic for our own slides. skips title slides and (mostly) ending slides
             continue
         pageBlocks = page.get_text("blocks", flags = pymupdf.TEXTFLAGS_BLOCKS | pymupdf.TEXT_PRESERVE_IMAGES)
         pageText = ""

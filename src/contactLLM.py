@@ -28,30 +28,23 @@ def formPrompt(context: list[str], metadatas: list[str], question: str, question
     return prompt
 
 
-# allowing the LLM to rerank is good, but way too slow.
-def contactReRanker(similarChunks, question: str, maxReranks: int, alreadySearchedIds: set, serverName: str, serverPort: int, clientSocket: socket,
+def contactReRanker(similarChunks, query: str, maxReranks: int, alreadySearchedIds: set, clientSocket: socket,
                     filterMetaData: dict[string:Any] = None): 
 
     toRemove = string.whitespace.replace(' ', '') #TODO verify method 
     table = str.maketrans('', '', toRemove)
-    fileName = "contexts.txt"
     negatives = 1
 
     while(negatives > 0 and maxReranks > 0):
-        with open(f"reranker/{fileName}", 'w+') as f:
-            toWrite = ""
-            for i, sC in enumerate(similarChunks["documents"][0]):
-                toWrite += (f"{similarChunks["ids"][0][i]}:{sC.translate(table)}\n")
-                alreadySearchedIds.add(int(similarChunks["ids"][0][i]))
-            toWrite += (question.translate(table))
-            f.write(toWrite)
+        toWrite = ""
+        for i, sC in enumerate(similarChunks["documents"][0]):
+            toWrite += (f"{similarChunks["ids"][0][i]}:{sC.translate(table)}\n")
+            alreadySearchedIds.add(int(similarChunks["ids"][0][i]))
+        toWrite += (query.translate(table))
 
-        clientSocket.send(f"{fileName}$EOM$".encode())
-        serverResponse = clientSocket.recv(1024).decode()
-        if serverResponse != f"Server at {serverName}:{serverPort} will rerank {fileName}$EOM$":
-            print("Reranking server failed, using first found context items.")
-            print("Received from server: ", serverResponse)
-            break
+        clientSocket.send(f"{toWrite}$EOM$".encode())
+
+        print("waiting for server response")
 
         serverResponse = clientSocket.recv(1024).decode() #server reranking, or some error
         rankings = (serverResponse.split(sep = '\n'))[:-1] #remove eom token
@@ -77,7 +70,7 @@ def contactReRanker(similarChunks, question: str, maxReranks: int, alreadySearch
         if filterMetaData:
             mdFilter = {"$and":[filterMetaData, mdFilter]}
 
-        additionalChunks = cs16collection.queryCollection([question], negatives, mdFilter) #with get filtering with metadata, and len()
+        additionalChunks = cs16collection.queryCollection([query], negatives, mdFilter) #with get filtering with metadata, and len()
         for i in range(negatives):
             similarChunks["ids"][0].append(additionalChunks["ids"][0][i])
             alreadySearchedIds.add(int(additionalChunks["ids"][0][i]))
@@ -117,10 +110,9 @@ for rowDict in conceptRows:
     conceptNamesToMaterialIdLists[rowDict["conceptName"]] = list(map(int,rowDict["materialIds"][1:len(rowDict["materialIds"])-1].split(","))) # conceptName:list[int]
 
 #TODO add support for full TCP comms (not writing to file) and/or unix domain socket support
-serverName = '127.0.0.1'
-serverPort = 2020
-clientSocket = socket(AF_INET, SOCK_STREAM)
-clientSocket.connect((serverName, serverPort))
+udsEndpoint = "/tmp/conc3ept"
+clientSocket = socket(AF_UNIX, SOCK_STREAM)
+clientSocket.connect(udsEndpoint)
 
 with open("qsfocusans.txt", "r") as f:
     while True:
@@ -129,7 +121,7 @@ with open("qsfocusans.txt", "r") as f:
 
         question = linesList[0]
         answer = linesList[1]
-        category = linesList[2] #blanket, but keep for now
+        # category = linesList[2] #old blanket label
 
         materialNames = set()
         alreadySearchedIds = set()
@@ -149,11 +141,16 @@ with open("qsfocusans.txt", "r") as f:
 
         question = question[topicsListEnd+1:]
 
-        similarChunksAnswer = cs16collection.queryCollection([answer], 15, mdFilter)
-        similarChunksQuestions = cs16collection.queryCollection([question],15, mdFilter)
+        similarChunksAnswer = cs16collection.queryCollection(queryTexts = [answer], filterMetaData = mdFilter, numResults = 15)
+        similarChunksQuestions = cs16collection.queryCollection(queryTexts = [question],filterMetaData = mdFilter, numResults = 15)
 
-        similarChunksAnswer = contactReRanker(similarChunksAnswer, answer, 2, alreadySearchedIds, serverName, serverPort, clientSocket, mdFilter)
-        similarChunksQuestions = contactReRanker(similarChunksQuestions, question, 2, alreadySearchedIds, serverName, serverPort, clientSocket, mdFilter)
+        similarChunksAnswer = contactReRanker(similarChunks = similarChunksAnswer, query = answer, maxReranks = 2,
+                                                alreadySearchedIds = alreadySearchedIds,
+                                                clientSocket = clientSocket, filterMetaData = mdFilter)
+    
+        similarChunksAnswer = contactReRanker(similarChunks = similarChunksQuestions, query = question, maxReranks = 2,
+                                                alreadySearchedIds = alreadySearchedIds,
+                                                clientSocket = clientSocket, filterMetaData = mdFilter)
 
         answerIds = set(similarChunksAnswer["ids"][0])
         questionIdsToIndexes = {}
@@ -176,11 +173,6 @@ with open("qsfocusans.txt", "r") as f:
 
         print(f"Found {len(allSimilarChunks["ids"])} unique related chunks \n")
 
-        toRemove = []
-
-        #rerank with both retrived question and answer chunks to just the question?
-
-            # for concepts, use from concept map?
         analysisMessages = [
             {"role":"system", "content":"""You are an average CS1 student that analyzes CS1 QUESTIONs and ANSWERs.
             You will receive a prompt structured and labeled in this order:
@@ -201,8 +193,7 @@ with open("qsfocusans.txt", "r") as f:
 
         #TODO replace above prompt formation with the function, for now i need context prompt separated for debugging in the log files
 
-
-        with open("results3.txt", "a") as r:
+        with open("results4.txt", "a") as r:
             r.write("--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
             r.write(f"\n------QUESTION: {question}\n")
             r.write(f"\n-------ANSWER: {answer}\n\n")
@@ -219,7 +210,7 @@ with open("qsfocusans.txt", "r") as f:
 
         classifyMessages.append({"role":"assistant", "content":f"ANALYSIS: {analysisResponse}\n"})
 
-        with open("results3.txt", "a") as r:
+        with open("results4.txt", "a") as r:
             r.write(f"\nANALYSIS RESPONSE -----\n{analysisResponse}")
 
         contextPrompt = "CONTEXT:"
@@ -269,7 +260,7 @@ with open("qsfocusans.txt", "r") as f:
         response = ollama.chat("miniqwenbloom2q8", messages = classifyMessages, think = False)
 
 
-        with open("results3.txt", "a") as r:
+        with open("results4.txt", "a") as r:
             r.write(f"\nCLASSES RESPONSE----\n {response["message"]["content"]}")
             r.write("\n------------------ENDCLASSES------------------------------\n")
 
@@ -290,7 +281,7 @@ with open("qsfocusans.txt", "r") as f:
 
         conceptMapConcepts = []
         conceptResponse = response["message"]["content"]
-        with open("results3.txt","a") as r:
+        with open("results4.txt","a") as r:
             r.write(f"\nID'DCONCEPTSBYLLM: {conceptResponse}\n")
         colon = 0
         newline = 0
@@ -307,11 +298,11 @@ with open("qsfocusans.txt", "r") as f:
         
         print(conceptMapConcepts)
 
-        with open("results3.txt","a") as r:
+        with open("results4.txt","a") as r:
             r.write(f"\nCMMAPCONCEPTS: {conceptMapConcepts}\n")
             r.write(f"\nENDCONTEXT---------------------------------------------------------------")
 
-        with open("results3.txt", "a") as r:
+        with open("results4.txt", "a") as r:
             r.write(f"\nCONTEXT ------------------------------------------------\n{contextPrompt}")
             r.write("\n---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
 

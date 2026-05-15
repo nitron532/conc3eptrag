@@ -36,7 +36,7 @@ class PersistentChromaDBCollection:
                 )
             except Exception as e:
                 print(e)
-                raise #some error. should be more descriptive in the future
+                raise #some error. TODO should be more descriptive in the future
     
     def parseAndPopulate(self,
                              materialsPath: str) -> int:
@@ -47,7 +47,7 @@ class PersistentChromaDBCollection:
                 self.startId = latestId
         except Exception as e:
             print(e)
-            raise #some error. should be more descriptive in the future
+            raise #some error. TODO should be more descriptive in the future
         return 1 #success
 
     def queryCollection(self,
