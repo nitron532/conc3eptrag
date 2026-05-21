@@ -1,8 +1,8 @@
 #include "reranker.h"
 
-double cosineSimilarity(const float* a, const float* b, size_t size){
+float cosineSimilarity(const float* a, const float* b, size_t size){
     float dot = 0, na = 0, nb = 0;
-        for (int i = 0; i < size; i++) {
+        for (size_t i = 0; i < size; i++) {
             dot += a[i] * b[i];
             na  += a[i] * a[i];
             nb  += b[i] * b[i];
