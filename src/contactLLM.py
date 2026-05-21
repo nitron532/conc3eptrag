@@ -6,6 +6,7 @@ from socket import *
 from typing import Any
 from itertools import islice
 import csv
+from graph import addNeighboringConcepts
 
 abspath = os.path.abspath(__file__)
 dname = os.path.dirname(abspath)
@@ -28,7 +29,11 @@ def formPrompt(context: list[str], metadatas: list[str], question: str, question
     return prompt
 
 
-def contactReRanker(similarChunks, query: str, maxReranks: int, alreadySearchedIds: set, clientSocket: socket,
+def contactReRanker(similarChunks, query: str, maxReranks: int, 
+                    alreadySearchedIds: set, clientSocket: socket,
+                    conceptIds: list[int], edgeRows: list[dict],
+                    conceptNamesToMaterialIdLists: dict[string:list[int]],
+                    materialNames: set[str],
                     filterMetaData: dict[string:Any] = None): 
 
     toRemove = string.whitespace.replace(' ', '') #TODO verify method 
@@ -66,8 +71,22 @@ def contactReRanker(similarChunks, query: str, maxReranks: int, alreadySearchedI
         if maxReranks == 0: break
 
         mdFilter = {"id":{"$nin": [str(j) for j in alreadySearchedIds]}}
+        
+        print(filterMetaData)
+        input("-------------original filterMetaData----------------")
 
         if filterMetaData:
+            #add to filterMetadata neighboring concept materialNames ($in materialnames)
+            #gradually expand out every rerank sort of like BFS
+            conceptsList = addNeighboringConcepts(conceptIds, edgeRows, conceptIdsToConceptNames)
+            for topic in conceptsList:
+                for materialId in conceptNamesToMaterialIdLists[topic]:
+                    materialNames.add(materialIdsToNames[materialId].strip())
+
+            #materials from returned updated topic list, one BFS level out
+            filterMetaData["fileName"]["$in"] = list(materialNames)
+            print(filterMetaData)
+            input("--------neighboring filterMetaData----------")
             mdFilter = {"$and":[filterMetaData, mdFilter]}
 
         additionalChunks = cs16collection.queryCollection([query], negatives, mdFilter) #with get filtering with metadata, and len()
@@ -78,6 +97,13 @@ def contactReRanker(similarChunks, query: str, maxReranks: int, alreadySearchedI
             similarChunks["documents"][0].append(additionalChunks["documents"][0][i])
         
     return similarChunks #unnecessary?
+
+
+def parseCSVIntoDict(path: str):
+    with open(path, mode = "r", newline = "") as f:
+        reader = csv.DictReader(f)
+        rows = [row for row in reader]
+    return rows
 
 ollama = Client(host = "localhost:11434")
 
@@ -91,28 +117,47 @@ status = cs16collection.parseAndPopulate(persistentPath) #TODO should have optio
 if status == 0: print(f"Found existing persistent chromadb collection at {persistentPath}")
 
 #set up dict for course materials
-with open("coursematerials.csv", mode = "r", newline = "") as f:
-    reader = csv.DictReader(f)
-    materialRows = [row for row in reader]
+materialRows = parseCSVIntoDict("coursematerials.csv")
 
 materialIdsToNames = {}
 for rowDict in materialRows:
     materialIdsToNames[int(rowDict["id"])] = rowDict["fileName"]
 
 #set up dict for concepts
-with open("concepts.csv", mode = "r", newline = "") as f:
-    reader = csv.DictReader(f)
-    conceptRows = [row for row in reader]
+conceptRows = parseCSVIntoDict("concepts.csv")
 
+#parse edges
+edgeRows = parseCSVIntoDict("edges.csv")
+
+#are all these maps really needed
 conceptNamesToMaterialIdLists = {} #depending on how questions are tagged with concepts, you could use conceptIdsToMaterialIds instead (int:int instead of string:int)
-
+conceptNamesToConceptIds = {}
+conceptIdsToConceptNames = {}
 for rowDict in conceptRows:
     conceptNamesToMaterialIdLists[rowDict["conceptName"]] = list(map(int,rowDict["materialIds"][1:len(rowDict["materialIds"])-1].split(","))) # conceptName:list[int]
+    conceptNamesToConceptIds[rowDict["conceptName"]] = int(rowDict["id"])
+    conceptIdsToConceptNames[int(rowDict["id"])] = rowDict["conceptName"]
 
-#TODO add support for full TCP comms (not writing to file) and/or unix domain socket support
-udsEndpoint = "/tmp/conc3ept"
-clientSocket = socket(AF_UNIX, SOCK_STREAM)
-clientSocket.connect(udsEndpoint)
+endpoint = None
+portNum = None
+comms = None
+clientSocket = None
+while(comms != "UDS" and comms != "TCP"):
+    comms = input("UDS or TCP? ")
+    try:
+        if comms == "TCP":
+            endpoint = input("IP?")
+            portNum = input("Port?")
+            clientSocket = socket(AF_INET, SOCK_STREAM)
+            endpoint = (endpoint, int(portNum))
+        elif comms == "UDS":
+            endpoint = "/tmp/conc3ept"
+            clientSocket = socket(AF_UNIX, SOCK_STREAM)
+    except Exception as e:
+        print(f"Error: {e}")
+clientSocket.connect(endpoint)
+
+#could just have this spawn the reranker server as a child process so the user doesnt have to set up that server either
 
 with open("qsfocusans.txt", "r") as f:
     while True:
@@ -123,21 +168,35 @@ with open("qsfocusans.txt", "r") as f:
         answer = linesList[1]
         # category = linesList[2] #old blanket label
 
+        #For dev. below this comment is the contact logic (Excluding log file writes), 
+        # above is just for testing with txt files
+
         materialNames = set()
         alreadySearchedIds = set()
 
+        #temporary way of finding concepts. should be in their own separate "column" eventually
         topicsListEnd = question.find("}")
-        topicsList = question[1:topicsListEnd].split() # space separated, with underscores for spaces in names (for parsing). concept map can have spaces for names
+        conceptsList = question[1:topicsListEnd].split() # space separated, with underscores for spaces in names (for parsing). concept map can have spaces for names
+        
+        #TODO fix underscores and use a different delimiter ($?)
 
-        for i,topic in enumerate(topicsList):
-            topicsList[i] = topic.replace("_", " ")
+        for i, name in enumerate(conceptsList):
+            conceptsList[i] = name.replace("_", " ")
 
-        for topic in topicsList:
+        # print(conceptsList)
+        # input("that was concepts list before finding neighbors")
+
+        conceptsList = addNeighboringConcepts([conceptNamesToConceptIds[name] for name in conceptsList],
+                                              edgeRows, conceptIdsToConceptNames)
+
+        # print(conceptsList)
+        # input("concepts list after finding neighbors")
+
+        for topic in conceptsList:
             for materialId in conceptNamesToMaterialIdLists[topic]:
                 materialNames.add(materialIdsToNames[materialId].strip()) #add fileNames to set, avoiding duplicate file names
         
-        materialNamesList = list(materialNames)
-        mdFilter = {"fileName":{"$in": materialNamesList}}
+        mdFilter = {"fileName":{"$in": list(materialNames)}}
 
         question = question[topicsListEnd+1:]
 
@@ -146,11 +205,21 @@ with open("qsfocusans.txt", "r") as f:
 
         similarChunksAnswer = contactReRanker(similarChunks = similarChunksAnswer, query = answer, maxReranks = 2,
                                                 alreadySearchedIds = alreadySearchedIds,
-                                                clientSocket = clientSocket, filterMetaData = mdFilter)
+                                                clientSocket = clientSocket,
+                                                conceptIds = [conceptNamesToConceptIds[name] for name in conceptsList],
+                                                edgeRows = edgeRows,
+                                                conceptNamesToMaterialIdLists = conceptNamesToMaterialIdLists,
+                                                materialNames = materialNames,
+                                                filterMetaData = mdFilter)
     
         similarChunksAnswer = contactReRanker(similarChunks = similarChunksQuestions, query = question, maxReranks = 2,
                                                 alreadySearchedIds = alreadySearchedIds,
-                                                clientSocket = clientSocket, filterMetaData = mdFilter)
+                                                clientSocket = clientSocket,
+                                                conceptIds = [conceptNamesToConceptIds[name] for name in conceptsList],
+                                                edgeRows = edgeRows,
+                                                conceptNamesToMaterialIdLists = conceptNamesToMaterialIdLists,
+                                                materialNames = materialNames,
+                                                filterMetaData = mdFilter)
 
         answerIds = set(similarChunksAnswer["ids"][0])
         questionIdsToIndexes = {}
@@ -193,7 +262,7 @@ with open("qsfocusans.txt", "r") as f:
 
         #TODO replace above prompt formation with the function, for now i need context prompt separated for debugging in the log files
 
-        with open("results4.txt", "a") as r:
+        with open("results5.txt", "a") as r:
             r.write("--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
             r.write(f"\n------QUESTION: {question}\n")
             r.write(f"\n-------ANSWER: {answer}\n\n")
@@ -210,7 +279,7 @@ with open("qsfocusans.txt", "r") as f:
 
         classifyMessages.append({"role":"assistant", "content":f"ANALYSIS: {analysisResponse}\n"})
 
-        with open("results4.txt", "a") as r:
+        with open("results5.txt", "a") as r:
             r.write(f"\nANALYSIS RESPONSE -----\n{analysisResponse}")
 
         contextPrompt = "CONTEXT:"
@@ -260,7 +329,7 @@ with open("qsfocusans.txt", "r") as f:
         response = ollama.chat("miniqwenbloom2q8", messages = classifyMessages, think = False)
 
 
-        with open("results4.txt", "a") as r:
+        with open("results5.txt", "a") as r:
             r.write(f"\nCLASSES RESPONSE----\n {response["message"]["content"]}")
             r.write("\n------------------ENDCLASSES------------------------------\n")
 
@@ -281,7 +350,7 @@ with open("qsfocusans.txt", "r") as f:
 
         conceptMapConcepts = []
         conceptResponse = response["message"]["content"]
-        with open("results4.txt","a") as r:
+        with open("results5.txt","a") as r:
             r.write(f"\nID'DCONCEPTSBYLLM: {conceptResponse}\n")
         colon = 0
         newline = 0
@@ -298,11 +367,11 @@ with open("qsfocusans.txt", "r") as f:
         
         print(conceptMapConcepts)
 
-        with open("results4.txt","a") as r:
+        with open("results5.txt","a") as r:
             r.write(f"\nCMMAPCONCEPTS: {conceptMapConcepts}\n")
             r.write(f"\nENDCONTEXT---------------------------------------------------------------")
 
-        with open("results4.txt", "a") as r:
+        with open("results5.txt", "a") as r:
             r.write(f"\nCONTEXT ------------------------------------------------\n{contextPrompt}")
             r.write("\n---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
 
