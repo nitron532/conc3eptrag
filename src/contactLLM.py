@@ -49,7 +49,7 @@ def contactReRanker(similarChunks, query: str, maxReranks: int,
 
         clientSocket.send(f"{toWrite}$EOM$".encode())
 
-        print("waiting for server response")
+        # print("waiting for server response")
 
         serverResponse = clientSocket.recv(1024).decode() #server reranking, or some error
         rankings = (serverResponse.split(sep = '\n'))[:-1] #remove eom token
@@ -72,21 +72,22 @@ def contactReRanker(similarChunks, query: str, maxReranks: int,
 
         mdFilter = {"id":{"$nin": [str(j) for j in alreadySearchedIds]}}
         
-        print(filterMetaData)
-        input("-------------original filterMetaData----------------")
-
+        # print(filterMetaData)
+        # input("-------------original filterMetaData----------------")
+        # SHOULD ONLY SEARCH NEIGHBORING CONCEPTS IF SOME THRESHOLD OF INSUFFICIENT CONTEXT IS FOUND
         if filterMetaData:
             #add to filterMetadata neighboring concept materialNames ($in materialnames)
             #gradually expand out every rerank sort of like BFS
-            conceptsList = addNeighboringConcepts(conceptIds, edgeRows, conceptIdsToConceptNames)
-            for topic in conceptsList:
-                for materialId in conceptNamesToMaterialIdLists[topic]:
-                    materialNames.add(materialIdsToNames[materialId].strip())
+            if negatives >= 8:
+                conceptsList = addNeighboringConcepts(conceptIds, edgeRows, conceptIdsToConceptNames)
+                for topic in conceptsList:
+                    for materialId in conceptNamesToMaterialIdLists[topic]:
+                        materialNames.add(materialIdsToNames[materialId].strip())
 
             #materials from returned updated topic list, one BFS level out
             filterMetaData["fileName"]["$in"] = list(materialNames)
-            print(filterMetaData)
-            input("--------neighboring filterMetaData----------")
+            # print(filterMetaData)
+            # input("--------neighboring filterMetaData----------")
             mdFilter = {"$and":[filterMetaData, mdFilter]}
 
         additionalChunks = cs16collection.queryCollection([query], negatives, mdFilter) #with get filtering with metadata, and len()
@@ -212,7 +213,7 @@ with open("qsfocusans.txt", "r") as f:
                                                 materialNames = materialNames,
                                                 filterMetaData = mdFilter)
     
-        similarChunksAnswer = contactReRanker(similarChunks = similarChunksQuestions, query = question, maxReranks = 2,
+        similarChunksQuestions = contactReRanker(similarChunks = similarChunksQuestions, query = question, maxReranks = 2,
                                                 alreadySearchedIds = alreadySearchedIds,
                                                 clientSocket = clientSocket,
                                                 conceptIds = [conceptNamesToConceptIds[name] for name in conceptsList],
