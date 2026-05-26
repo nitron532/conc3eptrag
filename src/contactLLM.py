@@ -6,6 +6,8 @@ from socket import *
 from typing import Any
 from itertools import islice
 import csv
+import re
+import json
 from graph import addNeighboringConcepts
 
 abspath = os.path.abspath(__file__)
@@ -106,6 +108,27 @@ def parseCSVIntoDict(path: str):
         rows = [row for row in reader]
     return rows
 
+endpoint = None
+portNum = None
+comms = None
+clientSocket = None
+while(comms != "UDS" and comms != "TCP"):
+    comms = input("(UDS) or (TCP) to connect to reranker? ")
+    try:
+        if comms == "TCP":
+            endpoint = input("IP?")
+            portNum = input("Port?")
+            clientSocket = socket(AF_INET, SOCK_STREAM)
+            endpoint = (endpoint, int(portNum))
+        elif comms == "UDS":
+            endpoint = "/tmp/conc3ept"
+            clientSocket = socket(AF_UNIX, SOCK_STREAM)
+    except Exception as e:
+        print(f"Error: {e}")
+clientSocket.connect(endpoint)
+
+#could just have this spawn the reranker server as a child process so the user doesnt have to set up that server either
+
 ollama = Client(host = "localhost:11434")
 
 cs16collection = PersistentChromaDBCollection("localhost:11434", 
@@ -139,26 +162,11 @@ for rowDict in conceptRows:
     conceptNamesToConceptIds[rowDict["conceptName"]] = int(rowDict["id"])
     conceptIdsToConceptNames[int(rowDict["id"])] = rowDict["conceptName"]
 
-endpoint = None
-portNum = None
-comms = None
-clientSocket = None
-while(comms != "UDS" and comms != "TCP"):
-    comms = input("UDS or TCP? ")
-    try:
-        if comms == "TCP":
-            endpoint = input("IP?")
-            portNum = input("Port?")
-            clientSocket = socket(AF_INET, SOCK_STREAM)
-            endpoint = (endpoint, int(portNum))
-        elif comms == "UDS":
-            endpoint = "/tmp/conc3ept"
-            clientSocket = socket(AF_UNIX, SOCK_STREAM)
-    except Exception as e:
-        print(f"Error: {e}")
-clientSocket.connect(endpoint)
 
-#could just have this spawn the reranker server as a child process so the user doesnt have to set up that server either
+allJsonObjects = {
+    "allQuestions":[]
+}
+
 
 with open("qsfocusans.txt", "r") as f:
     while True:
@@ -167,7 +175,7 @@ with open("qsfocusans.txt", "r") as f:
 
         question = linesList[0]
         answer = linesList[1]
-        # category = linesList[2] #old blanket label
+        qId = linesList[2]
 
         #For dev. below this comment is the contact logic (Excluding log file writes), 
         # above is just for testing with txt files
@@ -263,7 +271,7 @@ with open("qsfocusans.txt", "r") as f:
 
         #TODO replace above prompt formation with the function, for now i need context prompt separated for debugging in the log files
 
-        with open("results5.txt", "a") as r:
+        with open("results7.txt", "a") as r:
             r.write("--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
             r.write(f"\n------QUESTION: {question}\n")
             r.write(f"\n-------ANSWER: {answer}\n\n")
@@ -280,7 +288,7 @@ with open("qsfocusans.txt", "r") as f:
 
         classifyMessages.append({"role":"assistant", "content":f"ANALYSIS: {analysisResponse}\n"})
 
-        with open("results5.txt", "a") as r:
+        with open("results7.txt", "a") as r:
             r.write(f"\nANALYSIS RESPONSE -----\n{analysisResponse}")
 
         contextPrompt = "CONTEXT:"
@@ -311,29 +319,30 @@ with open("qsfocusans.txt", "r") as f:
             "content": (
                 f"{contextPrompt}\n"
                 "INSTRUCTIONS: Using the ANALYSIS above, classify each CONCEPT used in the ANALYSIS with its EXPLANATION "
-                "under the Revised Bloom's Taxonomy, citing relevant CONTEXT items only!. "
+                "under the Revised Bloom's Taxonomy, citing relevant CONTEXT items only!."
                 "For each CONCEPT, output in the same order as the ANALYSIS exactly:\n"
                 "CONCEPT: <concept name>\n"
                 "LEVEL: <Remember | Understand | Apply | Analyze | Evaluate | Create>\n"
-                "REASON: <one sentence citing the specific CONTEXT file that supports this level>\n"
+                "REASON: <one sentence citing the specific CONTEXT items, by citing them each individually in double dollar signs (e.g. $$1$$ $$2$$) that supports the LEVEL>\n"
                 "Classify every CONCEPT listed in the ANALYSIS. Do not skip any. Here are guidelines for each level:"
-                "Remember: If the CONCEPT was recalled from the CONTEXT with no further cognitive load."
-                "Understand: If the CONCEPT was explained at a high level in the ANSWER, used to predict output of a code segment, or used to evaluate expressions using ideas from the CONTEXT."
-                "Apply: If the CONCEPT was a usage of an algorithm, pattern, procedure or data structure found in the CONTEXT."
-                "Analyze: If the CONCEPT was broken down into component parts in the ANSWER, debugged by the ANSWER, or had its purpose explained in the ANSWER." #it keeps analyzing the explanation as analyze lol
-                "Evaluate: If the CONCEPT's efficiency was described, was compared against other approaches in terms of efficiency, style, or purpose, or evaluated against a set of criteria."
-                "Create: If the CONCEPT was abstracted and combined with other CONCEPTS in a novel way not seen in the CONTEXT, or if a new algorithm resulted from the combination of multiple CONCEPTs."
+                "Remember: If the CONCEPT was recalled from the CONTEXT with no further cognitive load.\n"
+                "Understand: If the CONCEPT was explained at a high level in the ANSWER, used to predict output of a code segment, or used to evaluate expressions using ideas from the CONTEXT.\n"
+                "Apply: If the CONCEPT was a usage of an algorithm, pattern, procedure or data structure found in the CONTEXT.\n"
+                "Analyze: If the CONCEPT was broken down into component parts in the ANSWER, debugged by the ANSWER, or had its purpose explained in the ANSWER.\n" #it keeps analyzing the explanation as analyze lol
+                "Evaluate: If the CONCEPT's efficiency was described, was compared against other approaches in terms of efficiency, style, or purpose, or evaluated against a set of criteria.\n"
+                "Create: If the CONCEPT was abstracted and combined with other CONCEPTS in a novel way not seen in the CONTEXT, or if a new algorithm resulted from the combination of multiple CONCEPTs.\n"
                 "You will cite relevant CONTEXT in your classification, limit your citations to relevant CONTEXT only. If the ANSWER has no code, then it do not label as Apply or Create."
             )
         })
 
         response = ollama.chat("miniqwenbloom2q8", messages = classifyMessages, think = False)
 
+        classificationResponse = response["message"]["content"]
 
-        with open("results5.txt", "a") as r:
-            r.write(f"\nCLASSES RESPONSE----\n {response["message"]["content"]}")
+        with open("results7.txt", "a") as r:
+            r.write(f"\nCLASSES RESPONSE----\n{classificationResponse}")
             r.write("\n------------------ENDCLASSES------------------------------\n")
-
+            
         llmConcepts = analysisResponse[analysisResponse.find("EXPLANATIONS:\n") + 14:]
 
         conceptMessages = [{"role":"user", "content":f"""
@@ -351,7 +360,7 @@ with open("qsfocusans.txt", "r") as f:
 
         conceptMapConcepts = []
         conceptResponse = response["message"]["content"]
-        with open("results5.txt","a") as r:
+        with open("results7.txt","a") as r:
             r.write(f"\nID'DCONCEPTSBYLLM: {conceptResponse}\n")
         colon = 0
         newline = 0
@@ -364,18 +373,57 @@ with open("qsfocusans.txt", "r") as f:
             else: conceptMapConcepts.append(conceptResponse[colon+1:newline])
 
             conceptResponse = conceptResponse[newline+1:]
-
         
         print(conceptMapConcepts)
 
-        with open("results5.txt","a") as r:
+        classifications = []
+        reasonIndex = classificationResponse.find("REASON:")
+        index = 0
+        while(reasonIndex != -1):
+            try:
+                conceptIndex = classificationResponse.find("CONCEPT:")
+                levelIndex = classificationResponse.find("LEVEL:")
+                reasoning = classificationResponse[reasonIndex: classificationResponse.find("\n", reasonIndex)].strip()
+                contextItemIndexes = [int(m) for m in re.findall(r'\$\$(\d+)\$\$', reasoning)]
+                fileNameList = [mD[m]["fileName"] for m in contextItemIndexes if m < len(mD)]
+                pageNumbers = [mD[m]["page"] for m in contextItemIndexes if m < len(mD)]
+                classifications.append(
+                    {
+                        "llmIdentifiedConcept": classificationResponse[conceptIndex+9:classificationResponse.find("\n", conceptIndex)].strip(),
+                        "conceptMapConcept": conceptMapConcepts[index], #assuming it returns in order
+                        "level": classificationResponse[levelIndex+7: classificationResponse.find("\n", levelIndex)].strip(),
+                        "reason": reasoning,
+                        "fileNames": fileNameList,
+                        "pageNumbers": pageNumbers
+                    }
+                )
+                classificationResponse = classificationResponse[reasonIndex+8:]
+                reasonIndex = classificationResponse.find("REASON:")
+                index += 1
+            except Exception as e:
+                print("error", e)
+                # print(f"uh wtf: \n {contextItemIndexes}, {len(mD)}")
+                # with open("results7.txt", "a") as r:
+                #     r.write(f"\nCONTEXT WHAAAT ------------------------------------------------\n{contextPrompt}")
+                #     r.write("\n---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
+                # with open("classes.json", "w+") as f:
+                #     json.dump(allJsonObjects,f)
+                exit(1)
+
+        allJsonObjects["allQuestions"].append({
+            "classifications":classifications,
+            "questionId": qId
+        })
+
+        with open("results7.txt","a") as r:
             r.write(f"\nCMMAPCONCEPTS: {conceptMapConcepts}\n")
             r.write(f"\nENDCONTEXT---------------------------------------------------------------")
 
-        with open("results5.txt", "a") as r:
+        with open("results7.txt", "a") as r:
             r.write(f"\nCONTEXT ------------------------------------------------\n{contextPrompt}")
             r.write("\n---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
 
+with open("classes.json", "w+") as f:
+    json.dump(allJsonObjects,f)
 
-      
 clientSocket.close()
