@@ -8,14 +8,16 @@ class PersistentChromaDBCollection:
                  ollamaURL: str,
                  modelName: str,
                  pathToPersistentClient: str,
-                 collectionName: str
+                 collectionName: str,
+                 space: str
                  ):
         self.embeddingFunction = OllamaEmbeddingFunction( #will extend to support others. but this is for local llms
             url = ollamaURL,
             model_name = modelName
         )
         client = chromadb.PersistentClient(path = pathToPersistentClient)
-        self.collection = client.get_or_create_collection(name = collectionName, embedding_function = self.embeddingFunction)
+        #cosine for jina
+        self.collection = client.get_or_create_collection(name = collectionName, embedding_function = self.embeddingFunction, configuration={"hnsw":{"space":space}})
         self.startId = 0
 
         #check if there is anything in the db. if so, set the start id to the highest id

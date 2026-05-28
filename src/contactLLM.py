@@ -1,5 +1,3 @@
-from ollama import Client
-from chromadbcollection import PersistentChromaDBCollection
 import os
 import string
 from socket import *
@@ -13,6 +11,30 @@ from graph import addNeighboringConcepts
 abspath = os.path.abspath(__file__)
 dname = os.path.dirname(abspath)
 os.chdir(dname)
+
+endpoint = None
+portNum = None
+comms = None
+clientSocket = None
+while(comms != "UDS" and comms != "TCP"):
+    comms = input("(UDS) or (TCP) to connect to reranker? ")
+    try:
+        if comms == "TCP":
+            endpoint = input("IP?")
+            portNum = input("Port?")
+            clientSocket = socket(AF_INET, SOCK_STREAM)
+            endpoint = (endpoint, int(portNum))
+        elif comms == "UDS":
+            endpoint = "/tmp/conc3ept"
+            clientSocket = socket(AF_UNIX, SOCK_STREAM)
+    except Exception as e:
+        print(f"Error: {e}")
+clientSocket.connect(endpoint)
+
+#could just have this spawn the reranker server as a child process so the user doesnt have to set up that server either
+
+from ollama import Client
+from chromadbcollection import PersistentChromaDBCollection
 
 def formPrompt(context: list[str], metadatas: list[str], question: str, questionFirst: bool, instruction: str = None):
     prompt = "CONTEXT:"
@@ -51,9 +73,9 @@ def contactReRanker(similarChunks, query: str, maxReranks: int,
 
         clientSocket.send(f"{toWrite}$EOM$".encode())
 
-        # print("waiting for server response")
-
-        serverResponse = clientSocket.recv(1024).decode() #server reranking, or some error
+        serverResponse = ""
+        while("$EOM$" not in serverResponse):
+            serverResponse += clientSocket.recv(1024).decode() #server reranking, or some error
         rankings = (serverResponse.split(sep = '\n'))[:-1] #remove eom token
         negatives = 0
         for i in range(len(similarChunks["ids"][0])):
@@ -74,9 +96,6 @@ def contactReRanker(similarChunks, query: str, maxReranks: int,
 
         mdFilter = {"id":{"$nin": [str(j) for j in alreadySearchedIds]}}
         
-        # print(filterMetaData)
-        # input("-------------original filterMetaData----------------")
-        # SHOULD ONLY SEARCH NEIGHBORING CONCEPTS IF SOME THRESHOLD OF INSUFFICIENT CONTEXT IS FOUND
         if filterMetaData:
             #add to filterMetadata neighboring concept materialNames ($in materialnames)
             #gradually expand out every rerank sort of like BFS
@@ -88,8 +107,6 @@ def contactReRanker(similarChunks, query: str, maxReranks: int,
 
             #materials from returned updated topic list, one BFS level out
             filterMetaData["fileName"]["$in"] = list(materialNames)
-            # print(filterMetaData)
-            # input("--------neighboring filterMetaData----------")
             mdFilter = {"$and":[filterMetaData, mdFilter]}
 
         additionalChunks = cs16collection.queryCollection([query], negatives, mdFilter) #with get filtering with metadata, and len()
@@ -108,33 +125,13 @@ def parseCSVIntoDict(path: str):
         rows = [row for row in reader]
     return rows
 
-endpoint = None
-portNum = None
-comms = None
-clientSocket = None
-while(comms != "UDS" and comms != "TCP"):
-    comms = input("(UDS) or (TCP) to connect to reranker? ")
-    try:
-        if comms == "TCP":
-            endpoint = input("IP?")
-            portNum = input("Port?")
-            clientSocket = socket(AF_INET, SOCK_STREAM)
-            endpoint = (endpoint, int(portNum))
-        elif comms == "UDS":
-            endpoint = "/tmp/conc3ept"
-            clientSocket = socket(AF_UNIX, SOCK_STREAM)
-    except Exception as e:
-        print(f"Error: {e}")
-clientSocket.connect(endpoint)
-
-#could just have this spawn the reranker server as a child process so the user doesnt have to set up that server either
-
 ollama = Client(host = "localhost:11434")
 
 cs16collection = PersistentChromaDBCollection("localhost:11434", 
                                               "jinacpu", #"huggingface.co/jinaai/jina-code-embeddings-1.5b-GGUF:latest"
                                               "../data/persistent",
-                                              "cs16collection")
+                                              "cs16collection",
+                                              "cosine")
 persistentPath = "../cs16materials"
 status = cs16collection.parseAndPopulate(persistentPath) #TODO should have option to just reembed a speciifc document
 
@@ -192,18 +189,13 @@ with open("qsfocusans.txt", "r") as f:
         for i, name in enumerate(conceptsList):
             conceptsList[i] = name.replace("_", " ")
 
-        # print(conceptsList)
-        # input("that was concepts list before finding neighbors")
-
         conceptsList = addNeighboringConcepts([conceptNamesToConceptIds[name] for name in conceptsList],
                                               edgeRows, conceptIdsToConceptNames)
 
-        # print(conceptsList)
-        # input("concepts list after finding neighbors")
-
+        #add fileNames to set, avoiding duplicate file names
         for topic in conceptsList:
             for materialId in conceptNamesToMaterialIdLists[topic]:
-                materialNames.add(materialIdsToNames[materialId].strip()) #add fileNames to set, avoiding duplicate file names
+                materialNames.add(materialIdsToNames[materialId].strip())
         
         mdFilter = {"fileName":{"$in": list(materialNames)}}
 
@@ -271,7 +263,7 @@ with open("qsfocusans.txt", "r") as f:
 
         #TODO replace above prompt formation with the function, for now i need context prompt separated for debugging in the log files
 
-        with open("results7.txt", "a") as r:
+        with open("results9.txt", "a") as r:
             r.write("--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
             r.write(f"\n------QUESTION: {question}\n")
             r.write(f"\n-------ANSWER: {answer}\n\n")
@@ -288,7 +280,7 @@ with open("qsfocusans.txt", "r") as f:
 
         classifyMessages.append({"role":"assistant", "content":f"ANALYSIS: {analysisResponse}\n"})
 
-        with open("results7.txt", "a") as r:
+        with open("results9.txt", "a") as r:
             r.write(f"\nANALYSIS RESPONSE -----\n{analysisResponse}")
 
         contextPrompt = "CONTEXT:"
@@ -339,7 +331,7 @@ with open("qsfocusans.txt", "r") as f:
 
         classificationResponse = response["message"]["content"]
 
-        with open("results7.txt", "a") as r:
+        with open("results9.txt", "a") as r:
             r.write(f"\nCLASSES RESPONSE----\n{classificationResponse}")
             r.write("\n------------------ENDCLASSES------------------------------\n")
             
@@ -360,7 +352,7 @@ with open("qsfocusans.txt", "r") as f:
 
         conceptMapConcepts = []
         conceptResponse = response["message"]["content"]
-        with open("results7.txt","a") as r:
+        with open("results9.txt","a") as r:
             r.write(f"\nID'DCONCEPTSBYLLM: {conceptResponse}\n")
         colon = 0
         newline = 0
@@ -380,50 +372,37 @@ with open("qsfocusans.txt", "r") as f:
         reasonIndex = classificationResponse.find("REASON:")
         index = 0
         while(reasonIndex != -1):
-            try:
-                conceptIndex = classificationResponse.find("CONCEPT:")
-                levelIndex = classificationResponse.find("LEVEL:")
-                reasoning = classificationResponse[reasonIndex: classificationResponse.find("\n", reasonIndex)].strip()
-                contextItemIndexes = [int(m) for m in re.findall(r'\$\$(\d+)\$\$', reasoning)]
-                fileNameList = [mD[m]["fileName"] for m in contextItemIndexes if m < len(mD)]
-                pageNumbers = [mD[m]["page"] for m in contextItemIndexes if m < len(mD)]
-                classifications.append(
-                    {
-                        "llmIdentifiedConcept": classificationResponse[conceptIndex+9:classificationResponse.find("\n", conceptIndex)].strip(),
-                        "conceptMapConcept": conceptMapConcepts[index], #assuming it returns in order
-                        "level": classificationResponse[levelIndex+7: classificationResponse.find("\n", levelIndex)].strip(),
-                        "reason": reasoning,
-                        "fileNames": fileNameList,
-                        "pageNumbers": pageNumbers
-                    }
-                )
-                classificationResponse = classificationResponse[reasonIndex+8:]
-                reasonIndex = classificationResponse.find("REASON:")
-                index += 1
-            except Exception as e:
-                print("error", e)
-                # print(f"uh wtf: \n {contextItemIndexes}, {len(mD)}")
-                # with open("results7.txt", "a") as r:
-                #     r.write(f"\nCONTEXT WHAAAT ------------------------------------------------\n{contextPrompt}")
-                #     r.write("\n---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
-                # with open("classes.json", "w+") as f:
-                #     json.dump(allJsonObjects,f)
-                exit(1)
+            conceptIndex = classificationResponse.find("CONCEPT:")
+            levelIndex = classificationResponse.find("LEVEL:")
+            reasoning = classificationResponse[reasonIndex: classificationResponse.find("\n", reasonIndex)].strip()
+            contextItemIndexes = [int(m) for m in re.findall(r'\$\$(\d+)\$\$', reasoning)]
+            fileNameList = [mD[m]["fileName"] for m in contextItemIndexes if m < len(mD)]
+            pageNumbers = [mD[m]["page"] for m in contextItemIndexes if m < len(mD)]
+            classifications.append(
+                {
+                    "llmIdentifiedConcept": classificationResponse[conceptIndex+9:classificationResponse.find("\n", conceptIndex)].strip(),
+                    "conceptMapConcept": conceptMapConcepts[index], #assuming it returns in order
+                    "conceptMapId": conceptNamesToConceptIds[conceptMapConcepts[index]],
+                    "level": classificationResponse[levelIndex+7: classificationResponse.find("\n", levelIndex)].strip(),
+                    "reason": reasoning,
+                    "fileNames": fileNameList,
+                    "pageNumbers": pageNumbers
+                }
+            )
+            classificationResponse = classificationResponse[reasonIndex+8:]
+            reasonIndex = classificationResponse.find("REASON:")
+            index += 1
 
-        allJsonObjects["allQuestions"].append({
-            "classifications":classifications,
-            "questionId": qId
-        })
+        #send question to flask backend
+        with open("classes.jsonl", "a") as j:
+            j.write(json.dumps({"classifications":classifications, "questionId": qId, "question": question, "answer": answer})+"\n")
 
-        with open("results7.txt","a") as r:
+        with open("results9.txt","a") as r:
             r.write(f"\nCMMAPCONCEPTS: {conceptMapConcepts}\n")
             r.write(f"\nENDCONTEXT---------------------------------------------------------------")
 
-        with open("results7.txt", "a") as r:
+        with open("results9.txt", "a") as r:
             r.write(f"\nCONTEXT ------------------------------------------------\n{contextPrompt}")
             r.write("\n---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
-
-with open("classes.json", "w+") as f:
-    json.dump(allJsonObjects,f)
 
 clientSocket.close()
