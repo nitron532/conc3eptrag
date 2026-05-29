@@ -31,7 +31,7 @@ while(comms != "UDS" and comms != "TCP"):
         print(f"Error: {e}")
 clientSocket.connect(endpoint)
 
-#could just have this spawn the reranker server as a child process so the user doesnt have to set up that server either
+#TODO could just have this spawn the reranker server as a child process so the user doesnt have to set up that server either
 
 from ollama import Client
 from chromadbcollection import PersistentChromaDBCollection
@@ -43,7 +43,7 @@ def formPrompt(context: list[str], metadatas: list[str], question: str, question
         if "Handout" not in metadatas[i]["fileName"]: documentType = "Lecture Page"
         if metadatas[i]["fileType"] != "pdf": documentType = "Code"
         if "HW" in  metadatas[i]["fileName"]: documentType = "Homework"
-        prompt += f"\nContext Item {i}:\nFile Name:{metadatas[i]["fileName"]}\nDocument Type:{documentType} \nPage Number:{metadatas[i]["page"]}\nWeek:{metadatas[i]["week"]}\n"
+        prompt += f"\nContext Item {i}:\nFile Name:{metadatas[i]["fileName"]}\nDocument Type:{documentType} \nPage Number:{metadatas[i]["page"]}\n" #\nWeek:{metadatas[i]["week"]}
         prompt += f"Chunk Text: {context[i]}"
 
     if questionFirst: prompt = f"QUESTION: {question}\n" +  prompt
@@ -131,9 +131,12 @@ cs16collection = PersistentChromaDBCollection("localhost:11434",
                                               "jinacpu", #"huggingface.co/jinaai/jina-code-embeddings-1.5b-GGUF:latest"
                                               "../data/persistent",
                                               "cs16collection",
-                                              "cosine")
+                                              "cosine",
+                                              "conc3ept")
 persistentPath = "../cs16materials"
-status = cs16collection.parseAndPopulate(persistentPath) #TODO should have option to just reembed a speciifc document
+status = cs16collection.parseAndPopulate(persistentPath) 
+#TODO should have option to just reembed a speciifc document. same file names will stay the same in psql even if updated
+#from web interface remove materials if you removed materials from the directory
 
 if status == 0: print(f"Found existing persistent chromadb collection at {persistentPath}")
 
@@ -289,7 +292,7 @@ with open("qsfocusans.txt", "r") as f:
             if "Handout" not in mD[i]["fileName"]: dT = "Lecture Page"
             if mD[i]["fileType"] != "pdf": dT = "Code"
             if "HW" in  mD[i]["fileName"]: dT = "Homework"
-            contextPrompt += f"\nContext Item {i}:\nFile Name:{mD[i]["fileName"]}\nDocument Type:{dT} \nPage Number:{mD[i]["page"]}\nWeek:{mD[i]["week"]}\n"
+            contextPrompt += f"\nContext Item {i}:\nFile Name:{mD[i]["fileName"]}\nDocument Type:{dT} \nPage Number:{mD[i]["page"]}\n" #Week:{mD[i]["week"]}\n
             contextPrompt += f"Chunk Text: {sC[i]}"
 
         systemPrompt = """
