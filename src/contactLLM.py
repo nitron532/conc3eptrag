@@ -203,20 +203,17 @@ with open("qsfocusans.txt", "r") as f:
         mdFilter = {"fileName":{"$in": list(materialNames)}}
 
         question = question[topicsListEnd+1:]
-
-        similarChunksAnswer = cs16collection.queryCollection(queryTexts = [answer], filterMetaData = mdFilter, numResults = 15)
-        similarChunksQuestions = cs16collection.queryCollection(queryTexts = [question],filterMetaData = mdFilter, numResults = 15)
-
-        similarChunksAnswer = contactReRanker(similarChunks = similarChunksAnswer, query = answer, maxReranks = 2,
-                                                alreadySearchedIds = alreadySearchedIds,
-                                                clientSocket = clientSocket,
-                                                conceptIds = [conceptNamesToConceptIds[name] for name in conceptsList],
-                                                edgeRows = edgeRows,
-                                                conceptNamesToMaterialIdLists = conceptNamesToMaterialIdLists,
-                                                materialNames = materialNames,
-                                                filterMetaData = mdFilter)
     
-        similarChunksQuestions = contactReRanker(similarChunks = similarChunksQuestions, query = question, maxReranks = 2,
+        query = question + answer
+
+        similarChunks = cs16collection.queryCollection(queryTexts = [query], filterMetaData = mdFilter, numResults = 30)
+
+        #Remove text that was added to set embedder inference mode from retrieved chunks
+        for i in range(len(similarChunks)):
+            input(similarChunks["documents"][0][i])
+            similarChunks["documents"][0][i] = similarChunks["documents"][0][i][similarChunks["documents"][0][i].find('\n')+1:]
+
+        similarChunks = contactReRanker(similarChunks = similarChunks, query = query, maxReranks = 2,
                                                 alreadySearchedIds = alreadySearchedIds,
                                                 clientSocket = clientSocket,
                                                 conceptIds = [conceptNamesToConceptIds[name] for name in conceptsList],
@@ -225,26 +222,10 @@ with open("qsfocusans.txt", "r") as f:
                                                 materialNames = materialNames,
                                                 filterMetaData = mdFilter)
 
-        answerIds = set(similarChunksAnswer["ids"][0])
-        questionIdsToIndexes = {}
-        for index, id in enumerate(similarChunksQuestions["ids"][0]):
-            if id not in answerIds:
-                questionIdsToIndexes[id] = index
-        
-        allSimilarChunks = {"ids":[], "documents":[], "metadatas":[]}
-        for id, index in questionIdsToIndexes.items():
-            allSimilarChunks["ids"].append(id)
-            allSimilarChunks["documents"].append(similarChunksQuestions["documents"][0][index])
-            allSimilarChunks["metadatas"].append(similarChunksQuestions["metadatas"][0][index])
-            
-        for i in range(len(similarChunksAnswer["ids"][0])):
-            allSimilarChunks["ids"].append(similarChunksAnswer["ids"][0][i])
-            allSimilarChunks["documents"].append(similarChunksAnswer["documents"][0][i])
-            allSimilarChunks["metadatas"].append(similarChunksAnswer["metadatas"][0][i])
 
-        print(allSimilarChunks["ids"])
+        print(similarChunks["ids"])
 
-        print(f"Found {len(allSimilarChunks["ids"])} unique related chunks \n")
+        print(f"Found {len(similarChunks["ids"])} unique related chunks \n")
 
         analysisMessages = [
             {"role":"system", "content":"""You are an average CS1 student that analyzes CS1 QUESTIONs and ANSWERs.
@@ -259,14 +240,14 @@ with open("qsfocusans.txt", "r") as f:
         ]
 
 
-        mD = allSimilarChunks["metadatas"]
-        sC = allSimilarChunks["documents"]
+        mD = similarChunks["metadatas"]
+        sC = similarChunks["documents"]
 
         firstQuestionPrompt = f"\nQUESTION: {question}\n" + f"\nANSWER:{answer}"
 
         #TODO replace above prompt formation with the function, for now i need context prompt separated for debugging in the log files
 
-        with open("results9.txt", "a") as r:
+        with open("results10.txt", "a") as r:
             r.write("--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
             r.write(f"\n------QUESTION: {question}\n")
             r.write(f"\n-------ANSWER: {answer}\n\n")
@@ -283,7 +264,7 @@ with open("qsfocusans.txt", "r") as f:
 
         classifyMessages.append({"role":"assistant", "content":f"ANALYSIS: {analysisResponse}\n"})
 
-        with open("results9.txt", "a") as r:
+        with open("results10.txt", "a") as r:
             r.write(f"\nANALYSIS RESPONSE -----\n{analysisResponse}")
 
         contextPrompt = "CONTEXT:"
@@ -334,7 +315,7 @@ with open("qsfocusans.txt", "r") as f:
 
         classificationResponse = response["message"]["content"]
 
-        with open("results9.txt", "a") as r:
+        with open("results10.txt", "a") as r:
             r.write(f"\nCLASSES RESPONSE----\n{classificationResponse}")
             r.write("\n------------------ENDCLASSES------------------------------\n")
             
@@ -355,7 +336,7 @@ with open("qsfocusans.txt", "r") as f:
 
         conceptMapConcepts = []
         conceptResponse = response["message"]["content"]
-        with open("results9.txt","a") as r:
+        with open("results10.txt","a") as r:
             r.write(f"\nID'DCONCEPTSBYLLM: {conceptResponse}\n")
         colon = 0
         newline = 0
@@ -397,14 +378,14 @@ with open("qsfocusans.txt", "r") as f:
             index += 1
 
         #send question to flask backend
-        with open("classes.jsonl", "a") as j:
+        with open("reslts9.jsonl", "a") as j:
             j.write(json.dumps({"classifications":classifications, "questionId": qId, "question": question, "answer": answer})+"\n")
 
-        with open("results9.txt","a") as r:
+        with open("results10.txt","a") as r:
             r.write(f"\nCMMAPCONCEPTS: {conceptMapConcepts}\n")
             r.write(f"\nENDCONTEXT---------------------------------------------------------------")
 
-        with open("results9.txt", "a") as r:
+        with open("results10.txt", "a") as r:
             r.write(f"\nCONTEXT ------------------------------------------------\n{contextPrompt}")
             r.write("\n---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
 
