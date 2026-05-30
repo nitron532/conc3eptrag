@@ -37,9 +37,11 @@ class PersistentChromaDBCollection:
     def addToCollection(self,
                         documents: list[str],
                         metadata: dict[str:Any],
-                        ids: list[int]) -> None:
+                        ids: list[int],
+                        embeddings: list[list[float]]) -> None: 
             try:
                 self.collection.add(
+                    #embeddings = [...]    #TODO change to add the embedding itself returned by the embedding server
                     ids = ids,
                     documents = documents,
                     metadatas = metadata

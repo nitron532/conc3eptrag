@@ -52,6 +52,18 @@ def formPrompt(context: list[str], metadatas: list[str], question: str, question
 
     return prompt
 
+def contactEmbedder(query: str, clientSocket: socket):
+    toRemove = string.whitespace.replace(' ', '') #TODO verify method 
+    table = str.maketrans('', '', toRemove)
+    toWrite = "E\n" + query.translate(table) + "$EOM$"
+    clientSocket.send(toWrite.encode())
+    
+    serverResponse = ""
+    while("$EOM" not in serverResponse):
+        serverResponse += clientSocket.recv(1024).decode()
+    embedding = list(map(float, serverResponse.split()))
+    print(embedding)
+    return embedding
 
 def contactReRanker(similarChunks, query: str, maxReranks: int, 
                     alreadySearchedIds: set, clientSocket: socket,
@@ -71,7 +83,7 @@ def contactReRanker(similarChunks, query: str, maxReranks: int,
             alreadySearchedIds.add(int(similarChunks["ids"][0][i]))
         toWrite += (query.translate(table))
 
-        clientSocket.send(f"{toWrite}$EOM$".encode())
+        clientSocket.send(f"R\n{toWrite}$EOM$".encode())
 
         serverResponse = ""
         while("$EOM$" not in serverResponse):
@@ -266,7 +278,7 @@ with open("qsfocusans.txt", "r") as f:
 
         #TODO replace above prompt formation with the function, for now i need context prompt separated for debugging in the log files
 
-        with open("results9.txt", "a") as r:
+        with open("results10.txt", "a") as r:
             r.write("--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
             r.write(f"\n------QUESTION: {question}\n")
             r.write(f"\n-------ANSWER: {answer}\n\n")
@@ -283,7 +295,7 @@ with open("qsfocusans.txt", "r") as f:
 
         classifyMessages.append({"role":"assistant", "content":f"ANALYSIS: {analysisResponse}\n"})
 
-        with open("results9.txt", "a") as r:
+        with open("results10.txt", "a") as r:
             r.write(f"\nANALYSIS RESPONSE -----\n{analysisResponse}")
 
         contextPrompt = "CONTEXT:"
@@ -334,7 +346,7 @@ with open("qsfocusans.txt", "r") as f:
 
         classificationResponse = response["message"]["content"]
 
-        with open("results9.txt", "a") as r:
+        with open("results10.txt", "a") as r:
             r.write(f"\nCLASSES RESPONSE----\n{classificationResponse}")
             r.write("\n------------------ENDCLASSES------------------------------\n")
             
@@ -355,7 +367,7 @@ with open("qsfocusans.txt", "r") as f:
 
         conceptMapConcepts = []
         conceptResponse = response["message"]["content"]
-        with open("results9.txt","a") as r:
+        with open("results10.txt","a") as r:
             r.write(f"\nID'DCONCEPTSBYLLM: {conceptResponse}\n")
         colon = 0
         newline = 0
@@ -387,7 +399,7 @@ with open("qsfocusans.txt", "r") as f:
                     "conceptMapConcept": conceptMapConcepts[index], #assuming it returns in order
                     "conceptMapId": conceptNamesToConceptIds[conceptMapConcepts[index]],
                     "level": classificationResponse[levelIndex+7: classificationResponse.find("\n", levelIndex)].strip(),
-                    "reason": reasoning,
+                    "explanation": reasoning,
                     "fileNames": fileNameList,
                     "pageNumbers": pageNumbers
                 }
@@ -397,14 +409,14 @@ with open("qsfocusans.txt", "r") as f:
             index += 1
 
         #send question to flask backend
-        with open("classes.jsonl", "a") as j:
+        with open("classes10.jsonl", "a") as j:
             j.write(json.dumps({"classifications":classifications, "questionId": qId, "question": question, "answer": answer})+"\n")
 
-        with open("results9.txt","a") as r:
+        with open("results10.txt","a") as r:
             r.write(f"\nCMMAPCONCEPTS: {conceptMapConcepts}\n")
             r.write(f"\nENDCONTEXT---------------------------------------------------------------")
 
-        with open("results9.txt", "a") as r:
+        with open("results10.txt", "a") as r:
             r.write(f"\nCONTEXT ------------------------------------------------\n{contextPrompt}")
             r.write("\n---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
 

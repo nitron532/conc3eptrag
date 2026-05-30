@@ -11,17 +11,21 @@
 #include "safetensors.hh"
 #define USE_MMAP
 
+//TODO change to abstract base type model and reranker and embedder are child classes to remove redundant code
+//designing non smartly to quickly prototype since code should mostly be the same
 
-class ReRanker{
+class Model{
     private:
         const std::string* query;
         const std::vector<std::string>* docs;
         std::vector<std::pair<float,int>> rankings; //index 0 -> index of document of best similarity with score
-        
+        std::vector<std::vector<float>> embedding; 
+
+
         llama_model_params modelParams;
         size_t gpuLayers = 0;
-        const char* rerankingModelPath; //"jina-reranker-v3-Q8_0.gguf"
-        llama_model* rerankingModel;
+        const char* modelPath;
+        llama_model* model;
         llama_context_params contextParams;
         llama_context* context;
         const llama_vocab* vocab;
@@ -36,15 +40,19 @@ class ReRanker{
         const float* project(const float* embedding);
 
     public:
-        ReRanker(size_t gpuLayers, const char* rerankingModelPath);
+        Model(size_t gpuLayers, const char* modelPath, bool embedder);
 
-        ~ReRanker();
+        ~Model();
+
+        void modelEmbed(bool query);
 
         void modelReRank();
 
         void setQueryAndDocuments(std::string& query, std::vector<std::string>& documents);
 
         const std::vector<std::pair<float,int>> * getRankings();
+
+        const std::vector<float> * getEmbedding();
 
         const std::string * getQuery();
         const std::vector<std::string> * getDocuments();
