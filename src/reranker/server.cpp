@@ -82,7 +82,7 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 
-    ReRanker jina(0, "jina-reranker-v3-Q8_0.gguf");
+    ReRanker jina(0, "models/jina-reranker-v3-Q8_0.gguf");
     asio::io_context ioContext;
     std::error_code ignoredError;
     asio::streambuf readbuffer;

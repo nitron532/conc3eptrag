@@ -167,30 +167,18 @@ allJsonObjects = {
     "allQuestions":[]
 }
 
-
-with open("qsfocusans.txt", "r") as f:
+with open("qapairs.jsonl", "r") as f:
     while True:
-        linesList = list(islice(f, 3))
-        if not linesList: break
+        questionObject = json.loads(list(islice(f, 1))[0].strip())
+        if not questionObject: break
 
-        question = linesList[0]
-        answer = linesList[1]
-        qId = linesList[2]
-
-        #For dev. below this comment is the contact logic (Excluding log file writes), 
-        # above is just for testing with txt files
+        question = questionObject["question"]
+        answer = questionObject["answer"]
+        qId = questionObject["questionId"]
+        conceptsList = questionObject["concepts"]
 
         materialNames = set()
         alreadySearchedIds = set()
-
-        #temporary way of finding concepts. should be in their own separate "column" eventually
-        topicsListEnd = question.find("}")
-        conceptsList = question[1:topicsListEnd].split() # space separated, with underscores for spaces in names (for parsing). concept map can have spaces for names
-        
-        #TODO fix underscores and use a different delimiter ($?)
-
-        for i, name in enumerate(conceptsList):
-            conceptsList[i] = name.replace("_", " ")
 
         conceptsList = addNeighboringConcepts([conceptNamesToConceptIds[name] for name in conceptsList],
                                               edgeRows, conceptIdsToConceptNames)
@@ -202,15 +190,11 @@ with open("qsfocusans.txt", "r") as f:
         
         mdFilter = {"fileName":{"$in": list(materialNames)}}
 
-        question = question[topicsListEnd+1:]
-    
         query = question + answer
 
-        similarChunks = cs16collection.queryCollection(queryTexts = [query], filterMetaData = mdFilter, numResults = 30)
-
+        similarChunks = cs16collection.queryCollection(queryTexts = [query], filterMetaData = mdFilter, numResults = 20)
         #Remove text that was added to set embedder inference mode from retrieved chunks
         for i in range(len(similarChunks)):
-            input(similarChunks["documents"][0][i])
             similarChunks["documents"][0][i] = similarChunks["documents"][0][i][similarChunks["documents"][0][i].find('\n')+1:]
 
         similarChunks = contactReRanker(similarChunks = similarChunks, query = query, maxReranks = 2,
@@ -225,7 +209,7 @@ with open("qsfocusans.txt", "r") as f:
 
         print(similarChunks["ids"])
 
-        print(f"Found {len(similarChunks["ids"])} unique related chunks \n")
+        print(f"Found {len(similarChunks["ids"][0])} unique related chunks \n")
 
         analysisMessages = [
             {"role":"system", "content":"""You are an average CS1 student that analyzes CS1 QUESTIONs and ANSWERs.
@@ -240,8 +224,8 @@ with open("qsfocusans.txt", "r") as f:
         ]
 
 
-        mD = similarChunks["metadatas"]
-        sC = similarChunks["documents"]
+        mD = similarChunks["metadatas"][0]
+        sC = similarChunks["documents"][0]
 
         firstQuestionPrompt = f"\nQUESTION: {question}\n" + f"\nANSWER:{answer}"
 
@@ -280,7 +264,7 @@ with open("qsfocusans.txt", "r") as f:
                         You are a CS1 instructor that will label the individual component concepts used in a question under the Revised Bloom's Taxonomy.
                         You will receive an input in this structure:
                         1. QUESTION: A test question from an introductory CS1 C++ course.
-                        2. ANSWER: The answer key answer to the QUESTION.
+                        2. ANSWER: The answer-key answer to the QUESTION.
                         3. ANALYSIS: A list consisting of CONCEPTS used in the QUESTION and ANSWER, and EXPLANATIONs of how each CONCEPT was used in the QUESTION and ANSWER.
                         4. CONTEXT: A small subset of CS1 course materials that should be related to the QUESTION. If any CONTEXT items are unhelpful, ignore them.
                         5. INSTRUCTIONS: A guideline you will follow for classifying using the CONTEXT.
@@ -378,7 +362,7 @@ with open("qsfocusans.txt", "r") as f:
             index += 1
 
         #send question to flask backend
-        with open("reslts9.jsonl", "a") as j:
+        with open("results10.jsonl", "a") as j:
             j.write(json.dumps({"classifications":classifications, "questionId": qId, "question": question, "answer": answer})+"\n")
 
         with open("results10.txt","a") as r:

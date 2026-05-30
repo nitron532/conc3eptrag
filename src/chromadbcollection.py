@@ -13,7 +13,6 @@ class PersistentChromaDBCollection:
                  collectionName: str,
                  space: str,
                  psqldb: str,
-                 code: bool,
                  ):
         self.embeddingFunction = OllamaEmbeddingFunction(
             url = ollamaURL,
@@ -107,11 +106,14 @@ class PersistentChromaDBCollection:
                         filterMetaData: dict[str:Any] = None):
         for i in range(len(queryTexts)):
             queryTexts[i] = f"Find the most relevant answer given the following question:\n{queryTexts[i]}" #queries (q/a) are prepended with techqa prefix
-        return self.collection.query(
+        chunks = self.collection.query(
             query_texts=queryTexts,
             n_results=numResults,
             where = filterMetaData
         )
+        for i in range(len(chunks["documents"][0])):
+            chunks["documents"][0][i] = chunks["documents"][0][i][chunks["documents"][0][i].find('\n')+1:]
+        return chunks
 
     def getCollectionCount(self) -> int: return self.collection.count()
 
