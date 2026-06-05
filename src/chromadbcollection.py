@@ -12,9 +12,9 @@ class PersistentChromaDBCollection:
                  pathToPersistentClient: str,
                  collectionName: str,
                  space: str,
-                 psqldb: str
+                 psqldb: str,
                  ):
-        self.embeddingFunction = OllamaEmbeddingFunction( #will extend to support others. but this is for local llms
+        self.embeddingFunction = OllamaEmbeddingFunction(
             url = ollamaURL,
             model_name = modelName
         )
@@ -32,6 +32,7 @@ class PersistentChromaDBCollection:
             host = "localhost",
             dbname = psqldb,
         )
+
         print(f"Successfuly connected to both ChromaDB collection {pathToPersistentClient} and PostgreSQL database {psqldb}")
 
     def addToCollection(self,
@@ -39,6 +40,8 @@ class PersistentChromaDBCollection:
                         metadata: dict[str:Any],
                         ids: list[int]) -> None:
             try:
+                for i in range(len(documents)):
+                    documents[i] = f"Candidate answer:\n{documents[i]}" #course contexts are treated as candidate answer for TechQA mode
                 self.collection.add(
                     ids = ids,
                     documents = documents,
@@ -101,11 +104,16 @@ class PersistentChromaDBCollection:
                         queryTexts: list[str],
                         numResults: int,
                         filterMetaData: dict[str:Any] = None):
-        return self.collection.query(
+        for i in range(len(queryTexts)):
+            queryTexts[i] = f"Find the most relevant answer given the following question:\n{queryTexts[i]}" #queries (q/a) are prepended with techqa prefix
+        chunks = self.collection.query(
             query_texts=queryTexts,
             n_results=numResults,
             where = filterMetaData
         )
+        for i in range(len(chunks["documents"][0])):
+            chunks["documents"][0][i] = chunks["documents"][0][i][chunks["documents"][0][i].find('\n')+1:]
+        return chunks
 
     def getCollectionCount(self) -> int: return self.collection.count()
 
