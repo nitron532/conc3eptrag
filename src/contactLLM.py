@@ -9,6 +9,7 @@ import re
 import json
 from graph import addNeighboringConcepts
 import sys
+from datetime import datetime
 
 abspath = os.path.abspath(__file__)
 dname = os.path.dirname(abspath)
@@ -210,13 +211,13 @@ oldRepoTagToCM = {
 
 returnId = 0
 
-questionFile = "parsedcs16questions.json" 
+questionFile = "parsedcs16questionswithexam.json" 
 # questionFile = "oldrepotest.json"
-resultFile = "oldreporesults2.jsonl" 
+resultFile = "oldreporesults3.jsonl" 
 # resultFile = "ordebug.jsonl"
-logFile = "oldreporesults2.txt"
+logFile = "oldreporesults3.txt"
 # logFile = "ordebug.txt"
-errorFile = "oldrepoerrors2.txt"
+errorFile = "oldrepoerrors3.txt"
 retryThreshold = 3
 with open(questionFile, "r") as f:
     questionList = ijson.items(f, "item")
@@ -297,7 +298,7 @@ with open(questionFile, "r") as f:
                 #TODO replace above prompt formation with the function, for now i need context prompt separated for debugging in the log files
 
                 with open(logFile, "a") as r:
-                    r.write("--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
+                    r.write(f"---------------------{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}-----------------------------------------------------------------------------------------------------------------------------------------------------")
                     r.write(f"\n------QUESTION: {question}\n")
                     r.write(f"\n-------ANSWER: {answer}\n\n")
 
@@ -314,7 +315,7 @@ with open(questionFile, "r") as f:
                 classifyMessages.append({"role":"assistant", "content":f"ANALYSIS: {analysisResponse}\n"})
 
                 with open(logFile, "a") as r:
-                    r.write(f"\nANALYSIS RESPONSE -----\n{analysisResponse}")
+                    r.write(f"\nANALYSIS RESPONSE ---{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}--\n{analysisResponse}")
 
                 contextPrompt = "CONTEXT:"
                 for i in range(len(sC)):
@@ -365,7 +366,7 @@ with open(questionFile, "r") as f:
                 classificationResponse = response["message"]["content"]
 
                 with open(logFile, "a") as r:
-                    r.write(f"\nCLASSES RESPONSE----\n{classificationResponse}")
+                    r.write(f"\nCLASSES RESPONSE- {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}---\n{classificationResponse}")
                     r.write("\n------------------ENDCLASSES------------------------------\n")
                     
                 llmConcepts = analysisResponse[analysisResponse.find("EXPLANATIONS:\n") + 14:]
@@ -392,7 +393,7 @@ with open(questionFile, "r") as f:
                 conceptMapConcepts = []
                 conceptResponse = response["message"]["content"]
                 with open(logFile,"a") as r:
-                    r.write(f"\nID'DCONCEPTSBYLLM: {conceptResponse}\n")
+                    r.write(f"\nID'DCONCEPTSBYLLM --{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}--: {conceptResponse}\n")
                 colon = 0
                 newline = 0
                 print("conceptResponse:", conceptResponse)
@@ -414,12 +415,12 @@ with open(questionFile, "r") as f:
                         if retries < retryThreshold:
                             with open(errorFile, "a") as r:
                                 print(f"\nWARNING: '{mapped}' not found in concept map, retrying {qId}\n")
-                                r.write(f"\nWARNING: '{mapped}' not found in concept map, retrying {qId}\n")
+                                r.write(f"\n{datetime.now().strftime("%Y-%m-%d %H:%M:%S")} WARNING: '{mapped}' not found in concept map, retrying {qId}\n")
                                 continue
                         else:
                             with open(errorFile, "a") as r:
                                 print(f"\nWARNING: '{mapped}' not found in concept map, skipping {qId} after max retries\n")
-                                r.write(f"\nWARNING: '{mapped}' not found in concept map, skipping {qId} after max retries\n")
+                                r.write(f"\n{datetime.now().strftime("%Y-%m-%d %H:%M:%S")} WARNING: '{mapped}' not found in concept map, skipping {qId} after max retries\n")
 
                 print("mapped back to cm:", conceptMapConcepts)
 
@@ -428,12 +429,12 @@ with open(questionFile, "r") as f:
                     if retries < retryThreshold:
                         print(f"\nWARNING: concept mapper returned {len(conceptMapConcepts)}, expected {expectedConceptCount}. Retrying {qId}.\n")
                         with open(errorFile, "a") as r:
-                            r.write(f"\nWARNING: concept mapper returned {len(conceptMapConcepts)}, expected {expectedConceptCount}. Retrying {qId}.\n")
+                            r.write(f"\n {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} WARNING: concept mapper returned {len(conceptMapConcepts)}, expected {expectedConceptCount}. Retrying {qId}.\n")
                         continue #TODO ideally try get whatever concepts you can
                     else:
                         print(f"\nWARNING: concept mapper returned {len(conceptMapConcepts)}, expected {expectedConceptCount}. Skipping {qId} after max retries.\n")
                         with open(errorFile, "a") as r:
-                            r.write(f"\nWARNING: concept mapper returned {len(conceptMapConcepts)}, expected {expectedConceptCount}. Skipping {qId} after max retries.\n")
+                            r.write(f"\n {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}WARNING: concept mapper returned {len(conceptMapConcepts)}, expected {expectedConceptCount}. Skipping {qId} after max retries.\n")
                         break #TODO ideally try get whatever concepts you can
 
                 classifications = []
@@ -467,11 +468,11 @@ with open(questionFile, "r") as f:
                     j.write(json.dumps({"classifications":classifications, "questionId": qId, "question": question, "answer": answer})+"\n")
 
                 with open(logFile,"a") as r:
-                    r.write(f"\nCMMAPCONCEPTS: {conceptMapConcepts}\n")
+                    r.write(f"\n {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} CMMAPCONCEPTS: {conceptMapConcepts}\n")
                     r.write(f"\nENDCONTEXT---------------------------------------------------------------")
 
                 with open(logFile, "a") as r:
-                    r.write(f"\nCONTEXT ------------------------------------------------\n{contextPrompt}")
+                    r.write(f"\n {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} CONTEXT ------------------------------------------------\n{contextPrompt}")
                     r.write("\n---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
 
                     success = True
@@ -480,12 +481,12 @@ with open(questionFile, "r") as f:
                 if retries < retryThreshold:
                     print(f"Error processing question {qId}: {e}\n Retrying.")
                     with open(logFile, "a") as r:
-                        r.write(f"Attempt {retries-1} failed. Error processing question {qId}: {e}\n Retrying.")
+                        r.write(f" {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} Attempt {retries-1} failed. Error processing question {qId}: {e}\n Retrying.")
                         continue
                 else:
                     print(f"Error processing question {qId}: {e}\n Skipping {qId}.")
                     with open(logFile, "a") as r:
-                        r.write(f"Attempt {retries-1} failed. Error processing question {qId}: {e}\n skipping after max retries.")
+                        r.write(f" {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} Attempt {retries-1} failed. Error processing question {qId}: {e}\n skipping after max retries.")
                         break
 
                 
