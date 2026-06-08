@@ -17,24 +17,25 @@ os.chdir(dname)
 
 oldRepoTags = int(sys.argv[1]) #1 if yes, 0 if directly mapped to concept map
 #find concepts : 1 if you want llm to identify concepts and map back to map for material search
+comms = int(sys.argv[2]) #1 for UDS , 0 for TCP
 
 endpoint = None
 portNum = None
-comms = None
 clientSocket = None
-while(comms != "UDS" and comms != "TCP"):
-    comms = input("(UDS) or (TCP) to connect to reranker? ")
-    try:
-        if comms == "TCP":
-            endpoint = input("IP?")
-            portNum = input("Port?")
-            clientSocket = socket(AF_INET, SOCK_STREAM)
-            endpoint = (endpoint, int(portNum))
-        elif comms == "UDS":
-            endpoint = "/tmp/conc3ept"
-            clientSocket = socket(AF_UNIX, SOCK_STREAM)
-    except Exception as e:
-        print(f"Error: {e}")
+# try:
+if comms == 0:
+    endpoint = input("IP?")
+    portNum = input("Port?")
+    clientSocket = socket(AF_INET, SOCK_STREAM)
+    endpoint = (endpoint, int(portNum))
+elif comms == 1:
+    endpoint = "/tmp/conc3ept"
+    clientSocket = socket(AF_UNIX, SOCK_STREAM)
+else:
+    print("Usage: 1 for UDS, 0 for TCP")
+    exit(1)
+# except Exception as e:
+#     print(f"Error: {e}")
 clientSocket.connect(endpoint)
 
 #TODO could just have this spawn the reranker server as a child process so the user doesnt have to set up that server either
@@ -105,7 +106,7 @@ def contactReRanker(similarChunks, query: str, maxReranks: int,
         
         if filterMetaData:
             #add to filterMetadata neighboring concept materialNames ($in materialnames)
-            #gradually expand out every rerank sort of like BFS
+            #gradually expand out every rerank sort of like BFS but only traversing the reverse direction of prereqs
             if negatives >= ogLength // 1.5: #threshold
                 conceptsList = addNeighboringConcepts(conceptIds, edgeRows, conceptIdsToConceptNames)
                 for topic in conceptsList:
@@ -206,18 +207,20 @@ oldRepoTagToCM = {
     "Overflow": "Math",
     "Type Casting": "Variables",
     "strings": "Strings",
-    "const": "Variables"
+    "const": "Variables",
+    "Sorting": "Arrays"
 }
 
-returnId = 0
+returnId = 0 #change to start at a specific id in the jsonl, assuming the jsonl file has qIds in ascending order.
+#TODO write to some temp file on crash and restart process using this 
 
 questionFile = "parsedcs16questionswithexam.json" 
 # questionFile = "oldrepotest.json"
-resultFile = "oldreporesults3.jsonl" 
+resultFile = "oldreporesults4.jsonl" 
 # resultFile = "ordebug.jsonl"
-logFile = "oldreporesults3.txt"
+logFile = "oldreporesults4.txt"
 # logFile = "ordebug.txt"
-errorFile = "oldrepoerrors3.txt"
+errorFile = "oldrepoerrors4.txt"
 retryThreshold = 3
 with open(questionFile, "r") as f:
     questionList = ijson.items(f, "item")
@@ -491,3 +494,18 @@ with open(questionFile, "r") as f:
 
                 
 clientSocket.close()
+
+
+"""
+
+2026-06-04 13:54:07
+2026-06-05 07:24:25
+
+non pipelined version
+took around 18 hours?
+
+
+2026-06-06 10:19:20
+2026-06-07 04:46:17
+
+"""
