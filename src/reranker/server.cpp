@@ -75,8 +75,8 @@ int main(int argc, char* argv[]) {
 
     try {
         useTCP = atoi(argv[1]);
-        if(useTCP) portNum = atoi(argv[2]);
-        else        socketPath = argv[2];
+        if(useTCP) {portNum = atoi(argv[2]);}
+        else {socketPath = argv[2];}
     } catch(std::exception const& ex) {
         std::cerr << "Usage: ./rerankerserver <tcp(1) or uds(0)> <connectionPoint>" << std::endl;
         exit(1);

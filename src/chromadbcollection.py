@@ -5,6 +5,7 @@ import parsing
 import psycopg
 from paddleocr import PaddleOCR
 
+#TODO maybe rename to a more accurate name since it also needs the PSQL db
 class PersistentChromaDBCollection:
     def __init__(self, 
                  ollamaURL: str,
@@ -28,7 +29,7 @@ class PersistentChromaDBCollection:
         if results["ids"]:
             self.startId = int(results["ids"][-1]) + 1 #plus one so the next chunk gets the next id
         
-        self.conn = psycopg.connect( #TODO may need to modify for user perm psql instead of superuser
+        self.conn = psycopg.connect( #TODO may need to modify for user perm psql instead of superuser. also rename class
             host = "localhost",
             dbname = psqldb,
         )
@@ -62,8 +63,8 @@ class PersistentChromaDBCollection:
                 )
                 ocr = None
                 unparsedFiles = []
-                for res in cur.fetchall():
-                    if ".pdf" in res: ocr = PaddleOCR(lang = 'en', use_angle_cls = True, device = "gpu") #can change to cpu if needed
+                for res in cur.fetchall(): #returns tuple ("fileName.extension",)
+                    if ".pdf" in res[0]: ocr = PaddleOCR(lang = 'en', use_angle_cls = True, device = "gpu") #can change to cpu if needed
                     unparsedFiles.append(res[0])
                 if len(unparsedFiles) < 1: return 0
                 for fileName in unparsedFiles:
@@ -123,3 +124,15 @@ class PersistentChromaDBCollection:
         return self.collection.get(
             where=metadata
         )
+    
+    def getPSQLTable(self, tableName:str, condition:str = ""):
+         with self.conn.cursor() as cur:
+                if len(condition) == 0:
+                    cur.execute(
+                        f"SELECT * from \"{tableName}\""
+                    )
+                else:
+                    cur.execute(
+                        f"SELECT * from \"{tableName}\" WHERE {condition}"
+                    )
+                return cur.fetchall()

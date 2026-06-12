@@ -4,7 +4,6 @@ from socket import *
 from typing import Any
 # from itertools import islice
 import ijson
-import csv
 import re
 import json
 from graph import addNeighboringConcepts
@@ -22,10 +21,10 @@ comms = int(sys.argv[2]) #1 for UDS , 0 for TCP
 endpoint = None
 portNum = None
 clientSocket = None
-# try:
+
 if comms == 0:
-    endpoint = input("IP?")
-    portNum = input("Port?")
+    endpoint = input("IP? ")
+    portNum = input("Port? ")
     clientSocket = socket(AF_INET, SOCK_STREAM)
     endpoint = (endpoint, int(portNum))
 elif comms == 1:
@@ -34,9 +33,9 @@ elif comms == 1:
 else:
     print("Usage: 1 for UDS, 0 for TCP")
     exit(1)
-# except Exception as e:
-#     print(f"Error: {e}")
+
 clientSocket.connect(endpoint)
+print(f"Connected to {endpoint}!")
 
 #TODO could just have this spawn the reranker server as a child process so the user doesnt have to set up that server either
 
@@ -67,7 +66,7 @@ def contactReRanker(similarChunks, query: str, maxReranks: int,
                     materialNames: set[str],
                     filterMetaData: dict[string:Any] = None): 
 
-    toRemove = string.whitespace.replace(' ', '') #TODO verify method 
+    toRemove = string.whitespace.replace(' ', '') #Removes all whitespaces except single spaces
     table = str.maketrans('', '', toRemove)
     negatives = 1
 
@@ -86,10 +85,12 @@ def contactReRanker(similarChunks, query: str, maxReranks: int,
             serverResponse += clientSocket.recv(1024).decode() #server reranking, or some error
         rankings = (serverResponse.split(sep = '\n'))[:-1] #remove eom token
         negatives = 0
+
         for i in range(len(similarChunks["ids"][0])):
             if "-" in rankings[i]:
+                print(f"GOING TO REMOVE CHUNK ID {rankings[i]}")
                 negatives += 1
-                failedIndex = int(rankings[i][-1])
+                failedIndex = int(rankings[i][rankings[i].rfind(" "):])
                 similarChunks["ids"][0][failedIndex] = -1
                 similarChunks["metadatas"][0][failedIndex] = -1
                 similarChunks["documents"][0][failedIndex] = -1 
@@ -125,15 +126,6 @@ def contactReRanker(similarChunks, query: str, maxReranks: int,
             alreadySearchedIds.add(int(additionalChunks["ids"][0][i]))
             similarChunks["metadatas"][0].append(additionalChunks["metadatas"][0][i])
             similarChunks["documents"][0].append(additionalChunks["documents"][0][i])
-        
-    return similarChunks #unnecessary?
-
-
-def parseCSVIntoDict(path: str):
-    with open(path, mode = "r", newline = "") as f:
-        reader = csv.DictReader(f)
-        rows = [row for row in reader]
-    return rows
 
 ollama = Client(host = "localhost:11434")
 
@@ -147,31 +139,30 @@ persistentPath = "../cs16materials"
 status = cs16collection.parseAndPopulate(persistentPath) 
 #TODO should have option to just reembed a speciifc document. same file names will stay the same in psql even if updated
 #from web interface remove materials if you removed materials from the directory
-#TODO change csv parsing to psql queries
 
 if status == 0: print(f"Found existing persistent chromadb collection at {persistentPath}")
 
 #set up dict for course materials
-materialRows = parseCSVIntoDict("coursematerials.csv")
-
 materialIdsToNames = {}
-for rowDict in materialRows:
-    materialIdsToNames[int(rowDict["id"])] = rowDict["fileName"]
+materialRows = cs16collection.getPSQLTable("coursematerials")
+for rowTuple in materialRows:
+    materialIdsToNames[int(rowTuple[0])] = rowTuple[1]
 
 #set up dict for concepts
-conceptRows = parseCSVIntoDict("concepts.csv")
+courseId = 1 #for testing, currently cs16
+conceptRows = cs16collection.getPSQLTable("Concepts", f"\"courseid\" = {courseId}")
 
 #parse edges
-edgeRows = parseCSVIntoDict("edges.csv")
+edgeRows = cs16collection.getPSQLTable("conceptlinks", f"\"courseid\" = {courseId}")
 
 #are all these maps really needed
 conceptNamesToMaterialIdLists = {} #depending on how questions are tagged with concepts, you could use conceptIdsToMaterialIds instead (int:int instead of string:int)
 conceptNamesToConceptIds = {}
 conceptIdsToConceptNames = {}
-for rowDict in conceptRows:
-    conceptNamesToMaterialIdLists[rowDict["conceptName"]] = list(map(int,rowDict["materialIds"][1:len(rowDict["materialIds"])-1].split(","))) # conceptName:list[int]
-    conceptNamesToConceptIds[rowDict["conceptName"]] = int(rowDict["id"])
-    conceptIdsToConceptNames[int(rowDict["id"])] = rowDict["conceptName"]
+for rowTuple in conceptRows:
+    conceptNamesToMaterialIdLists[rowTuple[1]] = list(map(int,rowTuple[4][1:len(rowTuple[4])-1])) # conceptName to list[int]
+    conceptNamesToConceptIds[rowTuple[1]] = int(rowTuple[0]) #conceptName to its id
+    conceptIdsToConceptNames[int(rowTuple[0])] = rowTuple[1] #conceptId to its name
 
 oldRepoTagToCM = {
     "Coding": "Functions",
@@ -216,11 +207,11 @@ returnId = 0 #change to start at a specific id in the jsonl, assuming the jsonl 
 
 questionFile = "parsedcs16questionswithexam.json" 
 # questionFile = "oldrepotest.json"
-resultFile = "oldreporesults4.jsonl" 
+resultFile = "oldreporesults6.jsonl" 
 # resultFile = "ordebug.jsonl"
-logFile = "oldreporesults4.txt"
+logFile = "oldreporesults6.txt"
 # logFile = "ordebug.txt"
-errorFile = "oldrepoerrors4.txt"
+errorFile = "oldrepoerrors6.txt"
 retryThreshold = 3
 with open(questionFile, "r") as f:
     questionList = ijson.items(f, "item")
@@ -268,7 +259,7 @@ with open(questionFile, "r") as f:
                 for i in range(len(similarChunks)):
                     similarChunks["documents"][0][i] = similarChunks["documents"][0][i][similarChunks["documents"][0][i].find('\n')+1:]
 
-                similarChunks = contactReRanker(similarChunks = similarChunks, query = query, maxReranks = 2,
+                contactReRanker(similarChunks = similarChunks, query = query, maxReranks = 2,
                                                         alreadySearchedIds = alreadySearchedIds,
                                                         clientSocket = clientSocket,
                                                         conceptIds = [conceptNamesToConceptIds[name] for name in conceptsList],
@@ -504,8 +495,9 @@ clientSocket.close()
 non pipelined version
 took around 18 hours?
 
-
 2026-06-06 10:19:20
 2026-06-07 04:46:17
+
+
 
 """
