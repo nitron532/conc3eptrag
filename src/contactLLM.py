@@ -8,6 +8,7 @@ import re
 import json
 from graph import addNeighboringConcepts
 import sys
+import traceback
 from datetime import datetime
 
 abspath = os.path.abspath(__file__)
@@ -21,6 +22,20 @@ comms = int(sys.argv[2]) #1 for UDS , 0 for TCP
 endpoint = None
 portNum = None
 clientSocket = None
+
+returnId = 0 #change to start at a specific id in the jsonl, assuming the jsonl file has qIds in ascending order.
+#TODO write to some temp file on crash and restart process using that temp file 
+
+# questionFile = "parsedcs16questionswithexam.json" 
+questionFile = "oldrepotest.json"
+# resultFile = "oldreporesults6.jsonl" 
+resultFile = "ordebug1.jsonl"
+# logFile = "oldreporesults6.txt"
+logFile = "ordebug1.txt"
+# errorFile = "oldrepoerrors6.txt"
+errorFile = "orerrorsdebug1.txt"
+retryThreshold = 3
+persistentPath = "../cs16materials"
 
 if comms == 0:
     endpoint = input("IP? ")
@@ -135,7 +150,7 @@ cs16collection = PersistentChromaDBCollection("localhost:11434",
                                               "cs16collection",
                                               "cosine",
                                               "conc3ept")
-persistentPath = "../cs16materials"
+
 status = cs16collection.parseAndPopulate(persistentPath) 
 #TODO should have option to just reembed a speciifc document. same file names will stay the same in psql even if updated
 #from web interface remove materials if you removed materials from the directory
@@ -160,7 +175,7 @@ conceptNamesToMaterialIdLists = {} #depending on how questions are tagged with c
 conceptNamesToConceptIds = {}
 conceptIdsToConceptNames = {}
 for rowTuple in conceptRows:
-    conceptNamesToMaterialIdLists[rowTuple[1]] = list(map(int,rowTuple[4][1:len(rowTuple[4])-1])) # conceptName to list[int]
+    conceptNamesToMaterialIdLists[rowTuple[1]] = list(map(int,rowTuple[4])) # conceptName to list[int]
     conceptNamesToConceptIds[rowTuple[1]] = int(rowTuple[0]) #conceptName to its id
     conceptIdsToConceptNames[int(rowTuple[0])] = rowTuple[1] #conceptId to its name
 
@@ -190,29 +205,26 @@ oldRepoTagToCM = {
     "Pass by reference": "Call By Reference/Value",
     "Iterative": "Loops",
     "Branches": "Conditionals",
+    "Branching": "Conditionals",
+    "TestDrivenDev": "Debugging",
     "Operator Overloading": "Classes",
     "typedef": "Variables",
     "Memory Model": "Memory Models",
+    "Memory Management": "Memory Layout",
     "namespace": "Namespaces",
     "Command Line": "Command Line Arguments",
     "Overflow": "Math",
     "Type Casting": "Variables",
     "strings": "Strings",
     "const": "Variables",
-    "Sorting": "Arrays"
+    "Sorting": "Arrays",
+    "CLI arg": "Command Line Arguments",
+    "Tracing": "Debugging",
+    "LinuxCMD": "Compilation",
+    "Compiling": "Compilation",
+    "ComputerBasics": "Syntax"
 }
 
-returnId = 0 #change to start at a specific id in the jsonl, assuming the jsonl file has qIds in ascending order.
-#TODO write to some temp file on crash and restart process using this 
-
-questionFile = "parsedcs16questionswithexam.json" 
-# questionFile = "oldrepotest.json"
-resultFile = "oldreporesults6.jsonl" 
-# resultFile = "ordebug.jsonl"
-logFile = "oldreporesults6.txt"
-# logFile = "ordebug.txt"
-errorFile = "oldrepoerrors6.txt"
-retryThreshold = 3
 with open(questionFile, "r") as f:
     questionList = ijson.items(f, "item")
     for questionObject in questionList:
@@ -228,7 +240,7 @@ with open(questionFile, "r") as f:
                 if qId < returnId: break #oldrepo ids are exported in increasing order
                 print("oldrepo question id", qId)
 
-
+                print("original concept list:", conceptsList)
                 if oldRepoTags:
                     for i in range(len(conceptsList)):
                         try:
@@ -236,7 +248,7 @@ with open(questionFile, "r") as f:
                         except Exception as e: #no entry in the dict, so the name is the same as the CM
                             pass
                     conceptsList = list(set(conceptsList)) #remove duplicates
-                print("cm concept list:", conceptsList)
+                print("mapped cm concept list:", conceptsList)
                     
                 materialNames = set()
                 alreadySearchedIds = set()
@@ -252,12 +264,12 @@ with open(questionFile, "r") as f:
                 
                 mdFilter = {"fileName":{"$in": list(materialNames)}}
 
+                print(mdFilter)
+
                 query = question + answer if answer is not None else question
 
                 similarChunks = cs16collection.queryCollection(queryTexts = [query], filterMetaData = mdFilter, numResults = 20)
-                #Remove text that was added to set embedder inference mode from retrieved chunks
-                for i in range(len(similarChunks)):
-                    similarChunks["documents"][0][i] = similarChunks["documents"][0][i][similarChunks["documents"][0][i].find('\n')+1:]
+                print("init sim chunks:", similarChunks["ids"])
 
                 contactReRanker(similarChunks = similarChunks, query = query, maxReranks = 2,
                                                         alreadySearchedIds = alreadySearchedIds,
@@ -345,12 +357,12 @@ with open(questionFile, "r") as f:
                         "LEVEL: <Remember | Understand | Apply | Analyze | Evaluate | Create>\n"
                         "REASON: <one sentence citing the specific CONTEXT items, by citing them each individually in double dollar signs (e.g. $$1$$ $$2$$) that supports the LEVEL>\n"
                         "Classify every CONCEPT listed in the ANALYSIS. Do not skip any. Here are guidelines for each level:"
-                        "Remember: If the CONCEPT was recalled from the CONTEXT with no further cognitive load.\n"
-                        "Understand: If the CONCEPT was explained at a high level in the ANSWER, used to predict output of a code segment, or used to evaluate expressions using ideas from the CONTEXT.\n"
-                        "Apply: If the CONCEPT was a usage of an algorithm, pattern, procedure or data structure found in the CONTEXT.\n"
-                        "Analyze: If the CONCEPT was broken down into component parts in the ANSWER, debugged by the ANSWER, or had its purpose explained in the ANSWER.\n" #it keeps analyzing the explanation as analyze lol
-                        "Evaluate: If the CONCEPT's efficiency was described, was compared against other approaches in terms of efficiency, style, or purpose, or evaluated against a set of criteria.\n"
-                        "Create: If the CONCEPT was abstracted and combined with other CONCEPTS in a novel way not seen in the CONTEXT, or if a new algorithm resulted from the combination of multiple CONCEPTs.\n"
+                        "Remember: If the ANSWER remembered the CONCEPT from the CONTEXT with no further cognitive load.\n"
+                        "Understand: If the ANSWER explained the CONCEPT at a high level, predicted the output of a code segment, or evaluated expressions using ideas from the CONTEXT.\n"
+                        "Apply: If the ANSWER applied the CONCEPT through usage of an algorithm, pattern, procedure or data structure found in the CONTEXT or similar to the CONTEXT.\n"
+                        "Analyze: If the ANSWER analyzed the CONCEPT by breaking it down into component parts in the ANSWER, debugged, or explained its purpose in the ANSWER.\n" #it keeps analyzing the explanation as analyze lol
+                        "Evaluate: If the ANSWER evaluated the usage of the CONCEPT's efficiency, compared against other approaches in terms of efficiency, style, or purpose, or evaluated against a set of criteria.\n"
+                        "Create: If the ANSWER created an algorithm or pattern entirely unfamiliar within all items of the CONTEXT, and is most related to the labeled CONCEPT.\n"
                         "You will cite relevant CONTEXT in your classification, limit your citations to relevant CONTEXT only. If the ANSWER has no code, then it do not label as Apply or Create."
                     )
                 })
@@ -439,6 +451,7 @@ with open(questionFile, "r") as f:
                     levelIndex = classificationResponse.find("LEVEL:")
                     reasoning = classificationResponse[reasonIndex: classificationResponse.find("\n", reasonIndex)].strip()
                     contextItemIndexes = [int(m) for m in re.findall(r'\$\$(\d+)\$\$', reasoning)]
+                    #TODO should also find Context Item X pattern
                     #should remove extraneous citations from reasoning thing
                     fileNameList = [mD[m]["fileName"] for m in contextItemIndexes if m < len(mD)]
                     pageNumbers = [mD[m]["page"] for m in contextItemIndexes if m < len(mD)]
@@ -474,11 +487,13 @@ with open(questionFile, "r") as f:
                 retries += 1
                 if retries < retryThreshold:
                     print(f"Error processing question {qId}: {e}\n Retrying.")
+                    traceback.print_exc()
                     with open(logFile, "a") as r:
                         r.write(f" {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} Attempt {retries-1} failed. Error processing question {qId}: {e}\n Retrying.")
                         continue
                 else:
                     print(f"Error processing question {qId}: {e}\n Skipping {qId}.")
+                    traceback.print_exc()
                     with open(logFile, "a") as r:
                         r.write(f" {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} Attempt {retries-1} failed. Error processing question {qId}: {e}\n skipping after max retries.")
                         break
