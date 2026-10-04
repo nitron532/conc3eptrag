@@ -4,15 +4,20 @@ RAG Stack:
 - Ollama (local classification LLM hosting)
 - llama.cpp (self-hosted re-ranker server for custom jina architecture)
 - ChromaDB (vector database for parsed course materials)
+  
 Parsing stack:
 - PyMuPDF (PDF text layer extraction)
 - PaddleOCR (OCR when images are detected)
+  
 Network / IPC Stack:
 - OpenSSL (secure distributed communication)
 - Boost.ASIO (network library)
+  
 UI Stack:
 - React (frontend)
 - Flask (backend)
 - PostgreSQL (metadata storage)
 
 *conc3ept UI lives in a separate repository
+
+Given a json of questions and coures materials, Conc3ept's end-to-end pipeline streams these into the classification system, parses into ChromaDB, and context-searched with a course concept map to focus RAG context. Reranked course materials are given to a chain-of-thought classification process and streamed into an output json, ready to use in the UI.
