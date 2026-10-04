@@ -10,8 +10,7 @@ Parsing stack:
 - PaddleOCR (OCR when images are detected)
   
 Network / IPC Stack:
-- OpenSSL (secure distributed communication)
-- Boost.ASIO (network library)
+- Boost.ASIO (network library, using SSL functionality)
   
 UI Stack:
 - React (frontend)
