@@ -20,4 +20,4 @@ UI Stack:
 
 *conc3ept UI lives in a separate repository
 
-Given a json of questions and coures materials, Conc3ept's end-to-end pipeline streams these into the classification system, parses into ChromaDB, and context-searched with a course concept map to focus RAG context. Reranked course materials are given to a chain-of-thought classification process and streamed into an output json, ready to use in the UI.
+Given a json of questions and course materials, Conc3ept's end-to-end pipeline streams these into the classification system, parses into ChromaDB, and context-searches with a course concept map to focus RAG context. Reranked course materials and questions are given to a chain-of-thought classification process and explanations of classifications with citations to course material streamed into an output json, ready to use in the UI.
