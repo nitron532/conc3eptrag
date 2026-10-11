@@ -11,6 +11,9 @@ add_executable(rerankerserver ../server.cpp ../reranker.cpp ../safetensors_impl.
 
 # set(CMAKE_BUILD_TYPE Debug) 
 
+find_package(OpenSSL REQUIRED)
+find_package(Threads REQUIRED)
+
 add_library(asio_lib INTERFACE)
 target_compile_definitions(rerankerserver PRIVATE ASIO_STANDALONE)
 
@@ -30,4 +33,4 @@ target_link_directories(rerankerserver PRIVATE
     ${CMAKE_SOURCE_DIR}/../../llama.cpp/build/bin
 )
 
-target_link_libraries(rerankerserver PRIVATE llama asio_lib)
+target_link_libraries(rerankerserver PRIVATE llama asio_lib OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
