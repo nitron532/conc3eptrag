@@ -1,13 +1,16 @@
 #include "reranker.h"
 #include <asio.hpp>
+#include <asio/ssl.hpp>
+#include <openssl/ssl.h>
 #include <fstream>
+#include <type_traits>
 
 template<typename Socket>
-void clientLoop(Socket& socket, ReRanker& jina, asio::streambuf& readbuffer, std::error_code& ignoredError) {
+void clientLoop(Socket& socket, ReRanker& jina, std::error_code& ignoredError) {
     std::string_view delim = "$EOM$";
+    asio::streambuf readbuffer;
     while(true) {
         try {
-            std::string response = "";
             size_t readNum = asio::read_until(socket, readbuffer, delim);
             std::string message = std::string(
                 asio::buffers_begin(readbuffer.data()),
@@ -39,7 +42,7 @@ void clientLoop(Socket& socket, ReRanker& jina, asio::streambuf& readbuffer, std
             jina.modelReRank();
             const std::vector<std::pair<float,int>>* rankings = jina.getRankings();
 
-            response = "";
+            std::string response = "";
             for(size_t i = 0; i < rankings->size(); i++) {
                 response += std::to_string(posToId[(*rankings)[i].second]) + " "
                             + std::to_string((*rankings)[i].first) + " "
@@ -57,54 +60,82 @@ void clientLoop(Socket& socket, ReRanker& jina, asio::streambuf& readbuffer, std
     }
 }
 
-template<typename Acceptor, typename Socket>
-void listenLoop(Acceptor& acceptor, ReRanker& jina, asio::io_context& ioContext,
-                asio::streambuf& readbuffer, std::error_code& ignoredError) {
-    while(true) {
-        Socket socket(ioContext);
-        acceptor.accept(socket);
-        std::cout << "accepted a client" << std::endl;
-        clientLoop(socket, jina, readbuffer, ignoredError);
+template<typename AcceptorFunction>
+void listenLoop(AcceptorFunction&& acceptClient, ReRanker& jina){
+    while(true){
+        try{
+            auto sock = acceptClient();
+            clientLoop(sock, jina);
+        } catch(const std::exception& e) {
+            std::cerr << "Failed to accept client: " << e.what() << std::endl;
+        }
     }
 }
 
-int main(int argc, char* argv[]) {
-    int useTCP = -1;
-    int portNum = 0;
-    const char* socketPath = nullptr;
+struct Config {
+    std::string certPath = "/etc/conc3ept/tls/server.pem";
+    std::string keyPath  = "/etc/conc3ept/tls/server-key.pem";
+    int method = 0; // 1 for TCP 0 for UDS
+    int port = 33333;
+    std::string sockPath = "/tmp/conc3ept";
+};
 
-    try {
-        useTCP = atoi(argv[1]);
-        if(useTCP) {portNum = atoi(argv[2]);}
-        else {socketPath = argv[2];}
-    } catch(std::exception const& ex) {
-        std::cerr << "Usage: ./rerankerserver <tcp(1) or uds(0)> <connectionPoint>" << std::endl;
+Config parseArgs(int argc, char* argv[]) {
+    Config cfg;
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+
+        if (a == "--cert" && i + 1 < argc) cfg.certPath = argv[++i];
+        else if (a == "--key" && i + 1 < argc) cfg.keyPath = argv[++i];
+        else if (a == "--method" && i +1 < argc) cfg.method = atoi(argv[++i]);
+        else if (a == "--sockPath" && i + 1 < argc) cfg.socketPath = argv[++i];
+        else if (a == "--port" && i + 1 < argc) cfg.port = atoi(argv[++i]);
+    }
+    if (const char* e = std::getenv("TLS_CERT")) cfg.certPath = e;
+    if (const char* e = std::getenv("TLS_KEY"))  cfg.keyPath  = e;
+    return cfg;
+}
+
+int main(int argc, char* argv[]) {
+    if(argc < 3){
+        std::cerr << "Usage: ./rerankerserver <tcp(1) or uds(0)>" << std::endl;
+        std::cerr<< "For TCP/TLS, add --cert <path to cert> --key <path to key>" << std::endl;
+        std::cerr<< "For UDS, add --sockPath <socket path>" << std::endl;
         exit(1);
     }
+    Config cfg = parseArgs(argc, argv);
 
     ReRanker jina(0, "models/jina-reranker-v3-Q8_0.gguf");
     asio::io_context ioContext;
     std::error_code ignoredError;
-    asio::streambuf readbuffer;
 
-    if(useTCP) {
+    if(cfg.method) {
         asio::ip::tcp::acceptor acceptor(
             ioContext,
-            asio::ip::tcp::endpoint(asio::ip::tcp::v4(), portNum)
+            asio::ip::tcp::endpoint(asio::ip::tcp::v4(), cfg.port)
         );
-        std::cout << "Listening on TCP port: " << portNum << std::endl;
-        listenLoop<asio::ip::tcp::acceptor, asio::ip::tcp::socket>(
-            acceptor, jina, ioContext, readbuffer, ignoredError
-        );
+        std::cout << "Listening on TCP port: " << cfg.port << std::endl;
+        asio::ssl::context ctx(asio::ssl::context::tls_server);
+        ctx.set_options(asio::ssl::context::default_workarounds);
+        SSL_CTX_set_min_proto_version(ctx.native_handle(), TLS1_2_VERSION);
+        ctx.use_private_key_file(cfg.keyPath, asio::ssl::context::pem); 
+        ctx.use_certificate_chain_file(cfg.certPath);
+        listenLoop([&]{
+            asio::ssl::stream<asio::ip::tcp::socket> sock(ioContext,ctx);
+            acceptor.accept(sock.lowest_layer());
+            sock.handshake(asio::ssl::stream_base::server);
+            return sock;
+        }, jina);
     } else {
-        ::unlink(socketPath);
-        asio::local::stream_protocol::endpoint ep(socketPath);
+        ::unlink(cfg.sockPath);
+        asio::local::stream_protocol::endpoint ep(cfg.sockPath);
         asio::local::stream_protocol::acceptor acceptor(ioContext, ep);
         std::cout << "Listening on UDS: " << socketPath << std::endl;
-        listenLoop<asio::local::stream_protocol::acceptor, asio::local::stream_protocol::socket>(
-            acceptor, jina, ioContext, readbuffer, ignoredError
-        );
+        listenLoop([&]{
+            asio::local::stream_protocol::socket sock(ioContext);
+            acceptor.accept(sock);
+            return sock;
+        }, jina);
     }
-
     return 0;
 }

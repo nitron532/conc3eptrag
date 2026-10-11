@@ -2,7 +2,7 @@ import os
 import string
 from socket import *
 from typing import Any
-# from itertools import islice
+import ssl
 import ijson
 import re
 import json
@@ -40,7 +40,12 @@ persistentPath = "../cs16materials"
 if comms == 0:
     endpoint = input("IP? ")
     portNum = input("Port? ")
+    # same Root that signed the server's certificate (not the key)
+    rootCAPath = input("RootCA Path? ")
     clientSocket = socket(AF_INET, SOCK_STREAM)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.load_verify_locations(rootCAPath)
+    clientSocket = context.wrap_socket(clientSocket, server_hostname= endpoint)
     endpoint = (endpoint, int(portNum))
 elif comms == 1:
     endpoint = "/tmp/conc3ept"
