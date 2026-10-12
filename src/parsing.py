@@ -74,7 +74,7 @@ def formFileChunks(root: str, file: str, ocr:PaddleOCR | None, dpi: int, id: int
             metadata.append(meta)
             pageNum += 1
             id += 1
-    elif file.endswith(".cpp") or file.endswith(".py") or file.endswith(".cc"):
+    elif os.path.splitext(file)[1] in [".cpp", ".py", ".cc", ".h"]:
         with open(f"{root}/{file}", "r") as f:
             code = f.read()
             if code.strip() and len(code) != 0:
