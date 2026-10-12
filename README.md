@@ -1,6 +1,17 @@
 # Conc3ept
 ### A self-hosted distributed RAG classification system for constructive alignment of assessments.
-Given a json of questions and course materials, Conc3ept's end-to-end pipeline streams these into the classification system, parses into ChromaDB, and context-searches with a course concept map to focus RAG context. Reranked course materials and questions are given to a prompt chain classification process and explanations of classifications with citations to course material streamed into an output json, ready to use in the UI.
+
+Conc3ept is a tool for instructors to improve the constructive alignment of their assessments with their course materials.
+Conc3ept takes in:
+- An input JSON of your course's questions
+- Course materials such as lectures and code examples
+And outputs per question:
+- LLM-identified concepts, mapped back to an instructor-defined map of course concepts
+- For each concept:
+  - A Revised Bloom's Taxonomy cognitive level
+  - A cited explanation for the classification, referencing relevant course materials
+
+These outputs help instructors check what their assessments are testing: are students simply recalling facts from lecture, or using creative problem solving to tackle unseen problems?
 
 
 | Course Material Parsing and Embedding | Context Retrieval and Reranking |
