@@ -29,9 +29,14 @@ It has only been tested on Ubuntu 22.04.
 ## Install
 To start, run `pip install -r requirements.txt` in a conda or venv.
 
-You'll also need to install [Ollama](https://docs.ollama.com/linux), and [PostgreSQL](https://www.postgresql.org/download/linux/ubuntu/) if you don't have already.
+You'll also need to install [Ollama](https://docs.ollama.com/linux) and [PostgreSQL](https://www.postgresql.org/download/linux/ubuntu/) if you haven't already.
 
 You may need to redirect Ollama's environment variables to point to a model folder of your choosing.
+
+For the reranker server, it is specifically implemented for jina-reranker-v3, and looks for a .gguf file (can be found [here](https://huggingface.co/jinaai/jina-reranker-v3-GGUF)).
+- Note: it is of interest to support different reranking models
+  
+For ChromaDB and classification, you can pull any model using Ollama (make sure its pointed to the correct directory).
 
 ### CMake Build
 cd into `src/reranker` and run:
@@ -57,6 +62,8 @@ tags - list[string]
 **tags** is a list of concepts. These are used to focus the RAG retrieval on only course materials tagged with those concepts, providing the classification more relevant context.
 
 Run `py latexparse.py <input_json_path> <output_json_path>` to get a JSON containing parsed question/answer info ready to feed into Conc3ept.
+
+
 
 
 
