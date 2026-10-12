@@ -71,10 +71,24 @@ cmake --build . -j
 ```
 This will build llama.cpp automatically and include the header-only Boost.asio and safetensors libraries.
 
-### Reranker SSL
+### Reranker and SSL
 If you plan on using TCP/TLS, you'll need a signed SSL certificate for the server, a private key for the server, and the root certificate authority that signed the server's SSL certificate.
 
 [mkcert](https://github.com/filosottile/mkcert) is an easy tool to set up SSL certificates for development, which should be enough if you keep the CA Root and server's private key private.
+
+Before starting the process below, make sure to build the reranker project with CMake and start it via
+
+`./rerankerserver <1 for tcp, or 0 for uds> ` 
+
+then, depending on your IPC method:
+```
+- TCP/TLS
+  - --cert <path to server cert> --key <path to server private key>
+- UDS
+  - --sockPath <socket path that will be created>
+```
+
+Also make sure you have the (jina-reranker-v3.gguf file([https://huggingface.co/jinaai/jina-reranker-v3-GGUF] in the models folder at the top level directory. 
 
 ## Usage / Implementation Description
 ### Question Input
