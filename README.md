@@ -88,7 +88,7 @@ tags: list[string]
 Run `py latexparse.py <input_json_path> <output_json_path>` to get a JSON containing parsed question/answer info ready to feed into Conc3ept.
 
 ### Course Material Parsing
-**TODO: generalize from oldrepo and improve path passing**
+***TODO: generalize from oldrepo and improve path passing***
 
 Currently a path must be written in the code to a directory containing your course materials. All materials should be at the top level of this dedicated directory.
 
@@ -106,7 +106,7 @@ Parsing yields parsed text via the generator `walkParse`, allowing memory effici
 Parsed files are marked "parsed" in the PostgreSQL database, and document ids persist across parse runs so the generator picks up where it left off if it was interrupted.
 
 ### Course Material Retrieval and Reranking
-**TODO docs for assigning concept tags to materials in postgres**
+***TODO docs for assigning concept tags to materials in postgres***
 
 After parsing is finished and the course materials are embedded into ChromaDB, questions are streamed from the input question JSON one at a time as a question/answer pair.
 
