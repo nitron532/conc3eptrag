@@ -104,7 +104,7 @@ int main(int argc, char* argv[]) {
     }
     Config cfg = parseArgs(argc, argv);
 
-    ReRanker jina(0, "models/jina-reranker-v3-Q8_0.gguf");
+    ReRanker jina(0, "../../models/jina-reranker-v3-Q8_0.gguf");
     asio::io_context ioContext;
     std::error_code ignoredError;
 
