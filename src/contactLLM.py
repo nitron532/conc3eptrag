@@ -51,7 +51,7 @@ elif comms == 0:
     endpoint = "/tmp/conc3ept"
     clientSocket = socket(AF_UNIX, SOCK_STREAM)
 else:
-    print("Usage: 1 for UDS, 0 for TCP")
+    print("Usage: 0 for UDS, 1 for TCP")
     exit(1)
 
 clientSocket.connect(endpoint)
