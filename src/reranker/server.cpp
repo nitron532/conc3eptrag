@@ -3,7 +3,6 @@
 #include <asio/ssl.hpp>
 #include <openssl/ssl.h>
 #include <fstream>
-#include <type_traits>
 
 template<typename Socket>
 void clientLoop(Socket& socket, ReRanker& jina, std::error_code& ignoredError) {
