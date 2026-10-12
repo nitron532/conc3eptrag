@@ -75,9 +75,9 @@ This will build llama.cpp automatically and include the header-only Boost.asio a
 ### Question Input
 For inputting questions, you should have a JSON containing a single list, each object representing a question and containing at least the following keys:
 ```
-content - string
-id - int
-tags - list[string]
+content: string
+id: int
+tags: list[string]
 ```
 **content** is a string containing a question and answer written in LaTex. It should have AnswerArea, item, and Solution environments/commands for info to be parsed correctly.
 
@@ -92,7 +92,7 @@ Run `py latexparse.py <input_json_path> <output_json_path>` to get a JSON contai
 
 Currently a path must be written in the code to a directory containing your course materials. All materials should be at the top level of this dedicated directory.
 
-Running `py contactLLM.py <1 to map oldrepo tags to concept map> <1 for TCP/TLS , 0 for UDS>` will automatically parse the course materials if they are unparsed (marked by PostgreSQL), or go straight to retrieval and classification if all are parsed.
+Running `py contactLLM.py <1 to map oldrepo tags to concept map> <1 for TCP/TLS , 0 for UDS>` will automatically parse and embed the course materials into ChromaDB if they are unparsed (marked by PostgreSQL), or go straight to retrieval and classification if all are parsed.
 
 The path to the outputted parsed questions must also be written in code.
 
@@ -105,6 +105,16 @@ Parsing yields parsed text via the generator `walkParse`, allowing memory effici
 
 Parsed files are marked "parsed" in the PostgreSQL database, and document ids persist across parse runs so the generator picks up where it left off if it was interrupted.
 
+### Course Material Retrieval and Reranking
+**TODO docs for assigning concept tags to materials in postgres**
+
+After parsing is finished and the course materials are embedded into ChromaDB, questions are streamed from the input question JSON one at a time as a question/answer pair.
+
+Course materials tagged with the same concepts as the question/answer pair serve as the corpus for retrieval, and the most cosine-similar documents are retrieved from ChromaDB, and passed to the reranker server for further processing. The first retrieval is a quick, large retrieval, whereas the reranking cross encodes the query with each document to create a query and doc embedding, which are then compared with cosine similarity to produce a final similarity score. The difference here is that the embeddings used in the first retrieval were created independently, whereas the reranker embeds query and document with respect to eachother.
+
+If the reranker finds too many unrelated documents, these unrelated documents will be excluded and the concept search breadth is expanded by one layer in the concept map. This repeats until a user-defined number of rounds, or until enough relevant documents are found.
+
+### Prompt Chaining Classification
 
 
 
