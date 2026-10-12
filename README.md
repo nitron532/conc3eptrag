@@ -27,9 +27,9 @@ This project was created for the constructive alignment of UCSB's CS16 course, s
 It has only been tested on Ubuntu 22.04.
 
 To start, run `pip install -r requirements.txt` in a conda or venv.
-You'll also need to install [Ollama](https://docs.ollama.com/linux).
+You'll also need to install [Ollama](https://docs.ollama.com/linux), and PostgreSQL if you don't have already.
 
-You should have a JSON containing a single list, each object representing a question and containing at least the following keys:
+For inputting questions, you should have a JSON containing a single list, each object representing a question and containing at least the following keys:
 ```
 content - string
 id - int
@@ -40,5 +40,9 @@ tags - list[string]
 **id** is a unique integer identifier for each question.
 
 **tags** is a list of concepts. These are used to focus the RAG retrieval on only course materials tagged with those concepts, providing the classification more relevant context.
+
+Run `py latexparse.py <input_json_path> <output_json_path>` to get a JSON containing parsed question/answer info ready to feed into Conc3ept.
+
+
 
 
