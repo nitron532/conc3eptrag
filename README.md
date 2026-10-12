@@ -159,4 +159,6 @@ The prompt chain consists of the following stages, separated to encourage unbias
 
 When a question/answer pair finishes this prompt chain process, it is streamed out into an output JSON, again for memory efficiency and checkpointing.
 
-
+## Next Steps
+Besides the TODOs, I would like to
+- Explore finetuning the classifier with DSPy, and maybe the embedder and reranker as well
