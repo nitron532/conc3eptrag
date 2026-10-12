@@ -1,0 +1,6 @@
+chromadb
+paddleocr
+psycopg
+ijson
+pymupdf
+numpy
