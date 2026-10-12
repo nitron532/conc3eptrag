@@ -52,7 +52,7 @@ To start, run
 
 `pip install -r requirements.txt` 
 
-in a conda or venv.
+preferably in a conda or venv.
 
 You'll also need to install [Ollama](https://docs.ollama.com/linux) and [PostgreSQL](https://www.postgresql.org/download/linux/ubuntu/) if you haven't already.
 
