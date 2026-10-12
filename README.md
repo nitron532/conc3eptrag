@@ -80,11 +80,11 @@ If you plan on using TCP/TLS, you'll need a signed SSL certificate for the serve
 
 [mkcert](https://github.com/filosottile/mkcert) is an easy tool to set up SSL certificates for development, which should be enough if you keep the CA Root and server's private key private.
 
-Before starting the process below, make sure to build the reranker project with CMake and start it via
+Before starting the main process below, make sure to build the reranker server with CMake and start it via
 
 `./rerankerserver <1 for tcp, or 0 for uds> ` 
 
-then, depending on your IPC method:
+then, depending on your IPC method add:
 ```
 - TCP/TLS
   - --cert <path to server cert> --key <path to server private key>
@@ -95,6 +95,8 @@ then, depending on your IPC method:
 Also make sure you have the (jina-reranker-v3.gguf file([https://huggingface.co/jinaai/jina-reranker-v3-GGUF] in the models folder at the top level directory. 
 
 ## Usage / Implementation Description
+Before starting Conc3ept, make sure you start Ollama and the reranker server so that embedding and reranking are online and ready to go.
+
 ### Question Input
 For inputting questions, you should have a JSON containing a single list, each object representing a question and containing at least the following keys:
 ```
