@@ -37,6 +37,8 @@ For the reranker server, it is specifically implemented for jina-reranker-v3, an
 - Note: it is of interest to support different reranking models
   
 For ChromaDB and classification, you can pull any model using Ollama (make sure its pointed to the correct directory).
+You may also want to create custom model files to finetune performance and restrict some models to CPU or GPU.
+The tested implementation puts jina-code-embeddings-1.5b on CPU, and a Qwen3.5 9B on GPU.
 
 ### CMake Build
 cd into `src/reranker` and run:
@@ -49,6 +51,7 @@ cmake --build . -j
 This will build llama.cpp automatically and include the header-only Boost.asio and safetensors libraries.
 
 ## Usage
+### Question Input
 For inputting questions, you should have a JSON containing a single list, each object representing a question and containing at least the following keys:
 ```
 content - string
@@ -62,6 +65,18 @@ tags - list[string]
 **tags** is a list of concepts. These are used to focus the RAG retrieval on only course materials tagged with those concepts, providing the classification more relevant context.
 
 Run `py latexparse.py <input_json_path> <output_json_path>` to get a JSON containing parsed question/answer info ready to feed into Conc3ept.
+
+### Course Material Parsing
+Currently a path must be passed in the code to a directory containing your course materials. All materials should be at the top level of this dedicated directory.
+
+The default implementation supports `.cpp`, `.py`, and `.cc` files, but this can be easily extended by adding onto the conditional's list in line 77 of `parsing.py`:
+`elif os.path.splitext(file)[1] in [".cpp", ".py", ".cc", ".h", ".html", ".java", ...]`
+
+PyMuPDF will be used to parse any PDFs, and if any images are detected, PaddleOCR is used parse text. Code files are treated as plaintext and stored as they are.
+
+Parsing yields parsed text via the generator `walkParse`, allowing memory efficient and checkpointed parsing. Yielded text is added to a persistent ChromaDB collection.
+
+Parsed files are marked "parsed" in the PostgreSQL database, and document ids persist across parse runs so the generator picks up where it left off if it was interrupted.
 
 
 
