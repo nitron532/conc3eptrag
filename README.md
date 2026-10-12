@@ -2,10 +2,11 @@
 ### A self-hosted distributed RAG classification system for constructive alignment of assessments.
 
 Conc3ept is a tool for instructors to improve the constructive alignment of their assessments with their course materials.
-Conc3ept takes in:
-- An input JSON of your course's questions
+#### Inputs
+- A JSON of your course's questions
 - Course materials such as lectures and code examples
-And outputs per question:
+  
+#### Outputs
 - LLM-identified concepts, mapped back to an instructor-defined map of course concepts
 - For each concept:
   - A Revised Bloom's Taxonomy cognitive level
