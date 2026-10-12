@@ -1,5 +1,13 @@
 # Conc3ept
 ### A self-hosted distributed RAG classification system for constructive alignment of assessments.
+Given a json of questions and course materials, Conc3ept's end-to-end pipeline streams these into the classification system, parses into ChromaDB, and context-searches with a course concept map to focus RAG context. Reranked course materials and questions are given to a prompt chain classification process and explanations of classifications with citations to course material streamed into an output json, ready to use in the UI.
+
+This project was created for the constructive alignment of UCSB's CS16 course, so a lot of the code is written to interface with other teaching team backend scripts.
+
+It has only been tested on Ubuntu 22.04.
+
+**This project is still under development, mainly focusing on user experience as most functionality is implemented.**
+
 RAG Stack:
 - Ollama (local classification LLM hosting)
 - llama.cpp (self-hosted re-ranker server for custom jina architecture)
@@ -21,11 +29,6 @@ UI Stack:
 
 *conc3ept UI lives in a separate repository
 
-Given a json of questions and course materials, Conc3ept's end-to-end pipeline streams these into the classification system, parses into ChromaDB, and context-searches with a course concept map to focus RAG context. Reranked course materials and questions are given to a prompt chain classification process and explanations of classifications with citations to course material streamed into an output json, ready to use in the UI.
-
-This project was created for the constructive alignment of UCSB's CS16 course, so a lot of the code is written to interface with other teaching team backend scripts.
-
-It has only been tested on Ubuntu 22.04.
 ## Install
 To start, run `pip install -r requirements.txt` in a conda or venv.
 
@@ -67,7 +70,8 @@ tags - list[string]
 Run `py latexparse.py <input_json_path> <output_json_path>` to get a JSON containing parsed question/answer info ready to feed into Conc3ept.
 
 ### Course Material Parsing
-Currently a path must be passed in the code to a directory containing your course materials. All materials should be at the top level of this dedicated directory.
+
+Currently a path must be written in the code to a directory containing your course materials. All materials should be at the top level of this dedicated directory.
 
 The default implementation supports `.cpp`, `.py`, and `.cc` files, but this can be easily extended by adding onto the conditional's list in line 77 of `parsing.py`:
 `elif os.path.splitext(file)[1] in [".cpp", ".py", ".cc", ".h", ".html", ".java", ...]`
