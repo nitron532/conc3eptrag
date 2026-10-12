@@ -17,7 +17,7 @@ os.chdir(dname)
 
 oldRepoTags = int(sys.argv[1]) #1 if yes, 0 if directly mapped to concept map
 #find concepts : 1 if you want llm to identify concepts and map back to map for material search
-comms = int(sys.argv[2]) #1 for UDS , 0 for TCP
+comms = int(sys.argv[2]) #1 for TCP/TLS , 0 for UDS
 
 endpoint = None
 portNum = None
@@ -37,7 +37,7 @@ errorFile = "orerrorsdebug1.txt"
 retryThreshold = 3
 persistentPath = "../cs16materials"
 
-if comms == 0:
+if comms == 1:
     endpoint = input("IP? ")
     portNum = input("Port? ")
     # same Root that signed the server's certificate (not the key)
@@ -47,7 +47,7 @@ if comms == 0:
     context.load_verify_locations(rootCAPath)
     clientSocket = context.wrap_socket(clientSocket, server_hostname= endpoint)
     endpoint = (endpoint, int(portNum))
-elif comms == 1:
+elif comms == 0:
     endpoint = "/tmp/conc3ept"
     clientSocket = socket(AF_UNIX, SOCK_STREAM)
 else:
