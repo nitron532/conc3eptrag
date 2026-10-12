@@ -71,6 +71,11 @@ cmake --build . -j
 ```
 This will build llama.cpp automatically and include the header-only Boost.asio and safetensors libraries.
 
+### Reranker SSL
+If you plan on using TCP/TLS, you'll need a signed SSL certificate for the server, a private key for the server, and the root certificate authority that signed the server's SSL certificate.
+
+[mkcert](https://github.com/filosottile/mkcert) is an easy tool to set up SSL certificates for development, which should be enough if you keep the CA Root and server's private key private.
+
 ## Usage / Implementation Description
 ### Question Input
 For inputting questions, you should have a JSON containing a single list, each object representing a question and containing at least the following keys:
