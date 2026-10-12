@@ -2,6 +2,12 @@
 ### A self-hosted distributed RAG classification system for constructive alignment of assessments.
 Given a json of questions and course materials, Conc3ept's end-to-end pipeline streams these into the classification system, parses into ChromaDB, and context-searches with a course concept map to focus RAG context. Reranked course materials and questions are given to a prompt chain classification process and explanations of classifications with citations to course material streamed into an output json, ready to use in the UI.
 
+
+| Course Material Parsing and Embedding | Context Retrieval and Reranking |
+| :---: | :---: |
+| ![Course material parsing and embedding process. Chunks are stored in ChromaDB for retrieval and reranking.](images/parseandembed.png) | ![Context retrieval and reranking process. A question/answer pair is inputted and relevant course context chunks are outputted to the classification process.](images/retrieveandrerank.png) |
+
+
 This project was created for the constructive alignment of UCSB's CS16 course, so a lot of the code is written to interface with other teaching team backend scripts.
 
 It has only been tested on Ubuntu 22.04.
