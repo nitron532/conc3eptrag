@@ -27,20 +27,20 @@ It has only been tested on Ubuntu 22.04.
 **This project is still under development, mainly focusing on user experience as most functionality is implemented.**
 
 RAG Stack:
-- Ollama (local classification LLM hosting)
-- llama.cpp (self-hosted re-ranker server for custom jina architecture)
-- ChromaDB (vector database for parsed course materials)
-- safetensors (C++ API for copy-free tensor manipulation)
+- Ollama (local classification LLM and embedding model hosting)
+- llama.cpp (self-hosted re-ranker server specifically implemented for jina-reranker-v3 architecture)
+- ChromaDB (vector database for parsed course materials, connects to Ollama for embedding model)
+- safetensors (C++ API for copy-free tensor manipulation, used for jina-reranker-v3 tensor operations)
   
 Parsing stack:
 - PyMuPDF (PDF text layer extraction)
-- PaddleOCR (OCR when images are detected)
+- PaddleOCR (OCR, only when images are detected)
   
 Network / IPC Stack:
-- Boost.ASIO (network library, using TLS functionality for distributed processing)
-- Unix Domain Sockets (for single-machine hosting)
+- Boost.ASIO (network library, using TLS for fast and secure distributed processing)
+- Unix Domain Sockets (for single-machine hosting, fast and secure)
   
-UI Stack:
+UI Stack*:
 - React (frontend)
 - Flask (backend)
 - PostgreSQL (metadata storage)
