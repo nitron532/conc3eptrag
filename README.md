@@ -115,7 +115,15 @@ Course materials tagged with the same concepts as the question/answer pair serve
 If the reranker finds too many unrelated documents, these unrelated documents will be excluded and the concept search breadth is expanded by one layer in the concept map. This repeats until a user-defined number of rounds, or until enough relevant documents are found.
 
 ### Prompt Chaining Classification
+The surviving documents from the retrieval/rerank stage are passed as context along with the question/answer pair to the classification LLM.
 
+The prompt chain consists of the following stages, separated to encourage unbiased outputs:
+
+| Stage | Input | Output | Description |
+| -------- | -------- | -------- | -------- |
+| Analysis | Question/Answer pair | List of LLM-identified concepts | This stage identifies concepts independent of course material and concept map to ensure unbiased identification. |
+| Classification | Question/Answer pair, retrieved course materials, and the Analysis' concept list | Revised Bloom's Taxonomy cognitive level for each concept, with a short explanation citing the provided course materials. | This stage provides the main output of the tool that is used for constructive alignment evaluation. |
+| Mapping | Analysis' concept list | Mappings from Analysis concepts to instructor-defined course concepts | This stage maps the LLM-identified concepts back to the instructor's course concept map for organization. It does not depend on the output of Classification. |
 
 
 
