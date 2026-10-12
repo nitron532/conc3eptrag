@@ -4,6 +4,7 @@ RAG Stack:
 - Ollama (local classification LLM hosting)
 - llama.cpp (self-hosted re-ranker server for custom jina architecture)
 - ChromaDB (vector database for parsed course materials)
+- safetensors (C++ api for copy-free tensor manipulation)
   
 Parsing stack:
 - PyMuPDF (PDF text layer extraction)
