@@ -71,7 +71,7 @@ cmake --build . -j
 ```
 This will build llama.cpp automatically and include the header-only Boost.asio and safetensors libraries.
 
-## Usage
+## Usage / Implementation Description
 ### Question Input
 For inputting questions, you should have a JSON containing a single list, each object representing a question and containing at least the following keys:
 ```
