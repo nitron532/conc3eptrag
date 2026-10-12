@@ -125,6 +125,6 @@ The prompt chain consists of the following stages, separated to encourage unbias
 | Classification | Question/Answer pair, retrieved course materials, and the Analysis' concept list | Revised Bloom's Taxonomy cognitive level for each concept, with a short explanation citing the provided course materials. | This stage provides the main output of the tool that is used for constructive alignment evaluation. |
 | Mapping | Analysis' concept list | Mappings from Analysis concepts to instructor-defined course concepts | This stage maps the LLM-identified concepts back to the instructor's course concept map for organization. It does not depend on the output of Classification. |
 
-
+When a question/answer pair finishes this prompt chain process, it is streamed out into an output JSON, again for memory efficiency and checkpointing.
 
 
