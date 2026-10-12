@@ -45,7 +45,7 @@ UI Stack*:
 - Flask (backend)
 - PostgreSQL (metadata storage)
 
-*conc3ept UI lives in a separate repository
+*conc3ept UI lives in a [separate repository](https://github.com/nitron532/conc3ept)
 
 ## Install
 To start, run `pip install -r requirements.txt` in a conda or venv.
