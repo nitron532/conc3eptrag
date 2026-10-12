@@ -4,3 +4,4 @@ psycopg
 ijson
 pymupdf
 numpy
+ollama
