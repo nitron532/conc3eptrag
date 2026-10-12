@@ -88,8 +88,13 @@ tags - list[string]
 Run `py latexparse.py <input_json_path> <output_json_path>` to get a JSON containing parsed question/answer info ready to feed into Conc3ept.
 
 ### Course Material Parsing
+**TODO: generalize from oldrepo and improve path passing**
 
 Currently a path must be written in the code to a directory containing your course materials. All materials should be at the top level of this dedicated directory.
+
+Running `py contactLLM.py <1 to map oldrepo tags to concept map> <1 for TCP/TLS , 0 for UDS>` will automatically parse the course materials if they are unparsed (marked by PostgreSQL), or go straight to retrieval and classification if all are parsed.
+
+The path to the outputted parsed questions must also be written in code.
 
 The default implementation supports `.cpp`, `.py`, and `.cc` files, but this can be easily extended by adding onto the conditional's list in line 77 of `parsing.py`:
 `elif os.path.splitext(file)[1] in [".cpp", ".py", ".cc", ".h", ".html", ".java", ...]`
