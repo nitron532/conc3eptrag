@@ -25,9 +25,20 @@ Given a json of questions and course materials, Conc3ept's end-to-end pipeline s
 This project was created for the constructive alignment of UCSB's CS16 course, so a lot of the code is written to interface with other teaching team backend scripts.
 
 It has only been tested on Ubuntu 22.04.
-
+## Install <hr>
 To start, run `pip install -r requirements.txt` in a conda or venv.
+
 You'll also need to install [Ollama](https://docs.ollama.com/linux), and PostgreSQL if you don't have already.
+
+### CMake Build
+cd into `src/reranker` and run:
+```
+mkdir build
+cd build
+cmake -S .. -B.
+cmake --build . -j
+```
+This will build llama.cpp automatically and include the header-only Boost.asio and safetensors libraries.
 
 For inputting questions, you should have a JSON containing a single list, each object representing a question and containing at least the following keys:
 ```
