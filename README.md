@@ -3,7 +3,9 @@
 
 Conc3ept is a free, open-source AI-powered tool that helps instructors evaluate whether their assessments align with their course materials using the Revised Bloom's Taxonomy's cognitive levels, and concept mapping.
 
-More technically, it is a self-hosted, distributed RAG (retrieval-augmented generation) question classification pipeline that retrieves context from course materials and an instructor-defined course concept map to give multi-label Revised Bloom's Taxonomy classifications to questions. It is designed with data privacy and practicality in mind, aiding instructors in evaluating the constructive alignment of their assessments and course materials without worrying about nosey third-parties or resource constraints.
+More technically, it is a self-hosted, distributed RAG (retrieval-augmented generation) question classification pipeline that retrieves context from course materials and an instructor-defined course concept map to give multi-label Revised Bloom's Taxonomy classifications to questions. 
+
+It is designed with data privacy and practicality in mind, aiding instructors in evaluating the constructive alignment of their assessments and course materials without worrying about nosey third-parties or resource constraints.
 
 #### Inputs
 - A JSON of your course's questions
