@@ -1,7 +1,7 @@
 # Conc3ept
 ### A self-hosted distributed RAG classification system for constructive alignment of assessments.
 
-Conc3ept is an AI-powered tool that helps instructors evaluate whether their assessments align with their course materials using the Revised Bloom's Taxonomy's cognitive levels, and concept mapping.
+Conc3ept is a free, open-source AI-powered tool that helps instructors evaluate whether their assessments align with their course materials using the Revised Bloom's Taxonomy's cognitive levels, and concept mapping.
 
 More technically, it is a self-hosted, distributed RAG (retrieval-augmented generation) question classification pipeline that retrieves context from course materials and an instructor-defined course concept map to give multi-label Revised Bloom's Taxonomy classifications to questions. It is designed with data privacy and practicality in mind, aiding instructors in evaluating the constructive alignment of their assessments and course materials without worrying about nosey third-parties or resource constraints.
 
@@ -66,7 +66,6 @@ You'll also need to install [Ollama](https://docs.ollama.com/linux) and [Postgre
 You may need to redirect Ollama's environment variables to point to a model folder of your choosing.
 
 For the reranker server, it is specifically implemented for jina-reranker-v3, and looks for a .gguf file (can be found [here](https://huggingface.co/jinaai/jina-reranker-v3-GGUF)).
-- Note: it is of interest to support different reranking models
   
 For ChromaDB and classification, you can pull any model using Ollama (make sure its pointed to the correct directory).
 You may also want to create custom model files to finetune performance and restrict some models to CPU or GPU.
@@ -100,7 +99,6 @@ then, depending on your IPC method add:
 ```
 
 Also make sure you have the (jina-reranker-v3.gguf file([https://huggingface.co/jinaai/jina-reranker-v3-GGUF] in the models folder at the top level directory. 
-- Note: a future update will split the heaviest part (Ollama) into another distributable process.
 
 ## Usage / Implementation Description
 Before starting Conc3ept, make sure you start Ollama and the reranker server so that embedding and reranking are online and ready to go.
@@ -171,4 +169,7 @@ When a question/answer pair finishes this prompt chain process, it is streamed o
 
 ## Next Steps
 Besides the TODOs, I would like to
-- Explore finetuning the classifier with DSPy, and maybe the embedder and reranker as well
+- Explore finetuning the classifier with DSPy, and maybe the embedder and reranker in general
+- Explore using Jev ai from Typesafe (but it's not free)
+- Support different reranking models
+- Isolate the prompt-chaining part of the system, the heaviest, so that functionality can be loaded onto an HPC server
