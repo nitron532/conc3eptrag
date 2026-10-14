@@ -1,10 +1,14 @@
 # Conc3ept
 ### A self-hosted distributed RAG classification system for constructive alignment of assessments.
 
-Conc3ept is a tool for instructors to improve the constructive alignment of their assessments with their course materials.
+Conc3ept is an AI-powered tool that helps instructors evaluate whether their assessments align with their course materials using the Revised Bloom's Taxonomy's cognitive levels, and concept mapping.
+
+More technically, it is a self-hosted, distributed RAG (retrieval-augmented generation) question classification pipeline that retrieves context from course materials and an instructor-defined course concept map to give multi-label Revised Bloom's Taxonomy classifications to questions. It is designed with data privacy and practicality in mind, aiding instructors in evaluating the constructive alignment of their assessments and course materials without worrying about nosey third-parties or resource constraints.
+
 #### Inputs
 - A JSON of your course's questions
 - Course materials such as lectures and code examples
+- An instructor-defined concept map of their course's concepts
   
 #### Outputs
 - LLM-identified concepts, mapped back to an instructor-defined map of course concepts
@@ -12,8 +16,11 @@ Conc3ept is a tool for instructors to improve the constructive alignment of thei
   - A Revised Bloom's Taxonomy cognitive level
   - A cited explanation for the classification, referencing relevant course materials
 
-These outputs help instructors check what their assessments are testing: are students simply recalling facts from lecture, or using creative problem solving to tackle unseen problems?
+These outputs help instructors check what their assessments are testing: 
 
+**Are students simply remembering facts from lecture, or using creative problem solving to tackle unseen problems?**
+
+## System Diagrams
 
 | Course Material Parsing and Embedding | Context Retrieval and Reranking |
 | :---: | :---: |
@@ -25,7 +32,7 @@ This project was created for the constructive alignment of UCSB's CS16 course, s
 It has only been tested on Ubuntu 22.04.
 
 **This project is still under development, mainly focusing on user experience as most functionality is implemented.**
-
+## Stack
 RAG Stack:
 - Ollama (local classification LLM and embedding model hosting)
 - llama.cpp (self-hosted re-ranker server specifically implemented for jina-reranker-v3 architecture)
@@ -76,7 +83,7 @@ cmake --build . -j
 This will build llama.cpp automatically and include the header-only Boost.asio and safetensors libraries.
 
 ### Reranker and SSL
-If you plan on using TCP/TLS, you'll need a signed SSL certificate for the server, a private key for the server, and the root certificate authority that signed the server's SSL certificate.
+If you plan on using TCP/TLS, you'll need to set up > TLS 1.2.
 
 [mkcert](https://github.com/filosottile/mkcert) is an easy tool to set up SSL certificates for development, which should be enough if you keep the CA Root and server's private key private.
 
@@ -93,6 +100,7 @@ then, depending on your IPC method add:
 ```
 
 Also make sure you have the (jina-reranker-v3.gguf file([https://huggingface.co/jinaai/jina-reranker-v3-GGUF] in the models folder at the top level directory. 
+- Note: a future update will split the heaviest part (Ollama) into another distributable process.
 
 ## Usage / Implementation Description
 Before starting Conc3ept, make sure you start Ollama and the reranker server so that embedding and reranking are online and ready to go.
