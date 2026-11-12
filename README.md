@@ -82,9 +82,12 @@ Clone the submodules if you haven't already:
 
 `git submodule update --init --recursive`
 
-And finally make sure you download the correct (https://developer.nvidia.com/cuda-downloads)[NVIDIA Cuda Tool Kits] and NVCC:
+And finally make sure you download the correct (https://developer.nvidia.com/cuda-downloads)[NVIDIA Cuda Tool Kits] and put nvcc on path:
 
-`sudo apt install nvidia-cuda-toolkit`
+```
+export CUDA_HOME=/usr/local/cuda
+export PATH=$CUDA_HOME/bin:$PATH
+```
 
 cd into `src/reranker` and run:
 ```
