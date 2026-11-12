@@ -82,7 +82,7 @@ Clone the submodules if you haven't already:
 
 `git submodule update --init --recursive`
 
-And finally make sure you download the correct [https://developer.nvidia.com/cuda-downloads](NVIDIA Cuda Tool Kits) and put nvcc on path:
+And finally make sure you download the correct [NVIDIA Cuda Tool Kits](https://developer.nvidia.com/cuda-downloads) and put nvcc on path:
 
 ```
 export CUDA_HOME=/usr/local/cuda
