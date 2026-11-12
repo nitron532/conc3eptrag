@@ -29,6 +29,7 @@ add_executable(rerankerserver
 
 target_include_directories(rerankerserver PRIVATE
     ${ASIO_INCLUDE}
+    ${SAFETENSORS_INCLUDE}
     ${LLAMA_DIR}/include
     ${LLAMA_DIR}/ggml/include
 )

@@ -3,6 +3,7 @@
 #include <asio/ssl.hpp>
 #include <openssl/ssl.h>
 #include <fstream>
+#include <unistd.h>
 
 template<typename Socket>
 void clientLoop(Socket& socket, ReRanker& jina, std::error_code& ignoredError) {
@@ -64,7 +65,8 @@ void listenLoop(AcceptorFunction&& acceptClient, ReRanker& jina){
     while(true){
         try{
             auto sock = acceptClient();
-            clientLoop(sock, jina);
+            std::error_code ignoredError;
+            clientLoop(sock, jina, ignoredError);
         } catch(const std::exception& e) {
             std::cerr << "Failed to accept client: " << e.what() << std::endl;
         }
@@ -87,7 +89,7 @@ Config parseArgs(int argc, char* argv[]) {
         if (a == "--cert" && i + 1 < argc) cfg.certPath = argv[++i];
         else if (a == "--key" && i + 1 < argc) cfg.keyPath = argv[++i];
         else if (a == "--method" && i +1 < argc) cfg.method = atoi(argv[++i]);
-        else if (a == "--sockPath" && i + 1 < argc) cfg.socketPath = argv[++i];
+        else if (a == "--sockPath" && i + 1 < argc) cfg.sockPath = argv[++i];
         else if (a == "--port" && i + 1 < argc) cfg.port = atoi(argv[++i]);
     }
     if (const char* e = std::getenv("TLS_CERT")) cfg.certPath = e;
@@ -126,10 +128,10 @@ int main(int argc, char* argv[]) {
             return sock;
         }, jina);
     } else {
-        ::unlink(cfg.sockPath);
+        ::unlink(cfg.sockPath.c_str());
         asio::local::stream_protocol::endpoint ep(cfg.sockPath);
         asio::local::stream_protocol::acceptor acceptor(ioContext, ep);
-        std::cout << "Listening on UDS: " << socketPath << std::endl;
+        std::cout << "Listening on UDS: " << cfg.sockPath << std::endl;
         listenLoop([&]{
             asio::local::stream_protocol::socket sock(ioContext);
             acceptor.accept(sock);
