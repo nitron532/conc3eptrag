@@ -74,6 +74,14 @@ You may also want to create custom model files to finetune performance and restr
 The tested implementation puts jina-code-embeddings-1.5b on CPU, and a Qwen3.5 9B on GPU.
 
 ### CMake Build
+You'll need to install the dev package for OpenSSL:
+
+`sudo apt install libssl-dev`
+
+Clone the submodules if you haven't already:
+
+`git submodule update --init --recursive`
+
 cd into `src/reranker` and run:
 ```
 mkdir build
